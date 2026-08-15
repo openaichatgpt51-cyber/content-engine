@@ -1,0 +1,19 @@
+node_modules/
+.env
+.env.local
+.env.local.example
+.env.*.local
+
+# Next.js
+.next/
+out/
+
+# Vite / React / Vue / Angular
+dist/
+build/
+.cache/
+
+ssh key pair
+ssh key pair.pub
+sshkeypair
+sshkeypair.pub
