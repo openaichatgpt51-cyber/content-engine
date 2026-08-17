@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../../../lib/supabase'
@@ -11,7 +11,7 @@ const TABS = [
   { key: 'twitter',   label: '⬛ X / Twitter',  field: 'twitter_hook_clean',   scheduledField: 'twitter_scheduled_time',   charLimit: 280  },
 ]
 
-export default function ReviewPage() {
+function ReviewFlow() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const targetPostId = searchParams.get('postId')
@@ -644,5 +644,17 @@ function XPreview({ text, imageUrl, handle }) {
       <p style={{ fontSize: '0.875rem', lineHeight: 1.4, whiteSpace: 'pre-wrap', marginBottom: 10 }}>{text || 'What is happening?!'}</p>
       {imageUrl && <FadeImage src={imageUrl} alt="Preview" height={220} radius={8} retryable={false} />}
     </div>
+  )
+}
+
+export default function ReviewPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Spinner />
+      </div>
+    }>
+      <ReviewFlow />
+    </Suspense>
   )
 }
