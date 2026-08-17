@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { PLANS } from '../../lib/plans'
@@ -17,7 +17,7 @@ const DAYS      = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'
 const TIMEZONES = ['Africa/Lagos','Europe/London','America/New_York','America/Los_Angeles','Asia/Dubai','Asia/Singapore']
 const INDUSTRIES = ['Technology','Finance','Healthcare','Marketing','Consulting','Education','Legal','Manufacturing','Retail','Other']
 
-export default function OnboardingPage() {
+function OnboardingFlow() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const initialStep  = parseInt(searchParams.get('step') || '1')
@@ -36,9 +36,10 @@ export default function OnboardingPage() {
       if (!user) { router.push('/login'); return }
       setUserId(user.id)
       // Load existing onboarding state
-      supabase.from('onboarding').select('*').eq('client_id', user.id).single().then(({ data }) => {
+      supabase.from('onboarding').select('*').eq('client_id', user.id).maybeSingle().then(({ data }) => {
+        if (data?.completed) { router.push('/dashboard'); return }
         if (data) {
-          setStep(data.completed ? 5 : data.step || 1)
+          setStep(data.step || 1)
           if (data.company_name) setCompany({ name: data.company_name, industry: data.industry || '', website: data.website || '' })
           if (data.posting_days) setSchedule({ days: data.posting_days, time: data.posting_time || '09:00', timezone: data.timezone || 'Africa/Lagos' })
         }
@@ -409,4 +410,16 @@ const inputStyle = {
   border: '1.5px solid var(--fog-60)', borderRadius: 'var(--radius-sm)',
   color: 'var(--ink)', fontSize: '0.9375rem', outline: 'none',
   transition: 'border-color 0.15s ease, box-shadow 0.15s ease', fontFamily: 'var(--font-body)',
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Spinner />
+      </div>
+    }>
+      <OnboardingFlow />
+    </Suspense>
+  )
 }
