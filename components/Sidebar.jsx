@@ -1,6 +1,8 @@
 'use client'
+import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import UsageMeter from './UsageMeter'
 
 const NAV = [
   { href: '/dashboard',          label: 'Calendar',     icon: CalIcon },
@@ -33,7 +35,7 @@ export default function Sidebar({ pendingCount = 0 }) {
       zIndex: 100,
     }}>
       {/* Logo */}
-      <div style={{
+      <div className="animate-in" style={{
         padding: '28px 24px 24px',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
@@ -50,7 +52,7 @@ export default function Sidebar({ pendingCount = 0 }) {
         {NAV.map(({ href, label, icon: Icon, badge }) => {
           const active = pathname === href
           return (
-            <a key={href} href={href} style={{
+            <Link key={href} href={href} className={`nav-item${active ? ' nav-item--active' : ''}`} style={{
               display: 'flex',
               alignItems: 'center',
               gap: 10,
@@ -61,13 +63,12 @@ export default function Sidebar({ pendingCount = 0 }) {
               background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
               fontSize: '0.875rem',
               fontWeight: active ? 500 : 400,
-              transition: 'all 0.15s ease',
               position: 'relative',
             }}>
               <Icon size={16} />
               {label}
               {badge && pendingCount > 0 && (
-                <span style={{
+                <span key={pendingCount} className="badge-pop" style={{
                   marginLeft: 'auto',
                   background: 'var(--accent-warm)',
                   color: 'var(--white)',
@@ -81,14 +82,17 @@ export default function Sidebar({ pendingCount = 0 }) {
                   {pendingCount}
                 </span>
               )}
-            </a>
+            </Link>
           )
         })}
       </nav>
 
+      {/* Usage */}
+      <UsageMeter compact />
+
       {/* Sign out */}
       <div style={{ padding: '16px 12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <button onClick={handleSignOut} style={{
+        <button onClick={handleSignOut} className="signout-btn press" style={{
           width: '100%',
           display: 'flex',
           alignItems: 'center',
@@ -97,7 +101,6 @@ export default function Sidebar({ pendingCount = 0 }) {
           borderRadius: 'var(--radius-sm)',
           color: 'rgba(255,255,255,0.35)',
           fontSize: '0.875rem',
-          transition: 'color 0.15s',
         }}>
           <LogOutIcon size={16} />
           Sign out

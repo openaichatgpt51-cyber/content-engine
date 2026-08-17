@@ -1,7 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { supabase } from '../../../lib/supabase'
+import { Spinner, FadeImage, Toast, Skeleton } from '../../../components/ui'
 
 const TABS = [
   { key: 'linkedin',  label: '🔵 LinkedIn',    field: 'linkedin_body_clean',  scheduledField: 'linkedin_scheduled_time',  charLimit: 1200 },
@@ -10,11 +12,51 @@ const TABS = [
 ]
 
 export default function ReviewPage() {
-  const router = useRouter()
-  const [posts,   setPosts]   = useState([])
-  const [loading, setLoading] = useState(true)
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+  const targetPostId = searchParams.get('postId')
 
-  useEffect(() => { loadPosts() }, [])
+  const [posts,     setPosts]     = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [accounts,  setAccounts]  = useState({}) // { linkedin: {...}, twitter: {...} }
+  const [postingPaused, setPostingPaused] = useState(false)
+  const scrolledRef = useRef(false)
+
+  useEffect(() => { loadPosts(); loadAccounts(); loadPauseState() }, [])
+
+  // Deep-link support: when arriving with ?postId=..., scroll to and
+  // highlight that specific card once the list has rendered.
+  useEffect(() => {
+    if (!targetPostId || loading || scrolledRef.current) return
+    const el = document.querySelector(`[data-post-id="${targetPostId}"]`)
+    if (el) {
+      scrolledRef.current = true
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [targetPostId, loading, posts])
+
+  async function loadAccounts() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase
+      .from('platform_accounts')
+      .select('platform, account_id')
+      .eq('client_id', user.id)
+    const map = {}
+    for (const a of data || []) map[a.platform] = a.account_id
+    setAccounts(map)
+  }
+
+  async function loadPauseState() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase
+      .from('account_settings')
+      .select('posting_paused')
+      .eq('client_id', user.id)
+      .maybeSingle()
+    setPostingPaused(Boolean(data?.posting_paused))
+  }
 
   async function loadPosts() {
   setLoading(true)
@@ -67,17 +109,33 @@ export default function ReviewPage() {
             {posts.length} post{posts.length !== 1 ? 's' : ''} awaiting your approval
           </p>
         </div>
-        <a href="/dashboard/new-post" style={{ padding: '10px 18px', background: 'var(--ink)', color: 'var(--white)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 500, textDecoration: 'none' }}>
+        <Link href="/dashboard/new-post" className="press hover-lift" style={{ padding: '10px 18px', background: 'var(--ink)', color: 'var(--white)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 500, textDecoration: 'none' }}>
           + New Post
-        </a>
+        </Link>
       </div>
+
+      {postingPaused && (
+        <div className="animate-in" style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '12px 18px', marginBottom: 24,
+          background: 'var(--failed-bg)', border: '1px solid var(--failed-border)',
+          borderRadius: 'var(--radius)', fontSize: '0.85rem', color: 'var(--failed)',
+        }}>
+          🛑 Posting is paused. Approvals below will be held, not published, until you resume in{' '}
+          <Link href="/dashboard/settings" style={{ fontWeight: 600, textDecoration: 'underline' }}>Settings</Link>.
+        </div>
+      )}
 
       {posts.length === 0 ? <EmptyState /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-          {posts.map(post => (
+          {posts.map((post, i) => (
             <PostCard
               key={post.id}
               post={post}
+              index={i}
+              accounts={accounts}
+              postingPaused={postingPaused}
+              highlighted={post.id === targetPostId}
               onUpdate={changes => updateLocalPost(post.id, changes)}
               onRemove={() => removePost(post.id)}
             />
@@ -89,7 +147,7 @@ export default function ReviewPage() {
 }
 
 // ── Post Card ─────────────────────────────────────────────────────────────
-function PostCard({ post, onUpdate, onRemove }) {
+function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highlighted = false, onUpdate, onRemove }) {
   const [tab,          setTab]          = useState('linkedin')
   const [editing,      setEditing]      = useState(false)
   const [draftText,    setDraftText]    = useState('')
@@ -98,11 +156,15 @@ function PostCard({ post, onUpdate, onRemove }) {
   const [showReject,   setShowReject]   = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [toast,        setToast]        = useState(null)
+  const [leaving,       setLeaving]     = useState(false)
 
   const cfg         = TABS.find(t => t.key === tab)
   const currentText = localPost[cfg.field] || ''
   const charCount   = editing ? draftText.length : currentText.length
-  const imageUrl    = localPost.image_1_view_url || localPost.image_1_url
+  // image_1_view_url points at a Google Drive *webpage* (drive.google.com/file/d/.../view),
+  // not raw image bytes — it can never render inside an <img> tag. image_1_url is the
+  // actual embeddable image (lh3.googleusercontent.com), so it must take priority.
+  const imageUrl    = localPost.image_1_url || localPost.image_1_view_url
 
   function showMsg(msg, type = 'success') {
     setToast({ msg, type })
@@ -121,9 +183,11 @@ function PostCard({ post, onUpdate, onRemove }) {
       return
     }
 
+    const nextStatus = postingPaused ? 'HALTED' : 'PENDING'
+
     const { data, error } = await supabase
       .from('posts')
-      .update({ posting_status: 'PENDING' })
+      .update({ posting_status: nextStatus })
       .eq('id', localPost.id)
       .select()
 
@@ -139,7 +203,8 @@ function PostCard({ post, onUpdate, onRemove }) {
       return
     }
 
-    showMsg('Post approved and scheduled')
+    showMsg(postingPaused ? 'Approved — held until you resume posting' : 'Post approved and scheduled')
+    setLeaving(true)
     setTimeout(() => onRemove(), 1200)
     setSaving(false)
   }
@@ -162,6 +227,7 @@ function PostCard({ post, onUpdate, onRemove }) {
     }
     setShowReject(false)
     showMsg('Post rejected')
+    setLeaving(true)
     setTimeout(() => onRemove(), 1200)
     setSaving(false)
   }
@@ -182,7 +248,7 @@ function PostCard({ post, onUpdate, onRemove }) {
     setSaving(true)
     const changes = {
       [cfg.field]:    draftText,
-      posting_status: 'PENDING',    // save + approve in one step
+      posting_status: postingPaused ? 'HALTED' : 'PENDING',    // save + approve in one step
     }
     const { error } = await supabase
       .from('posts')
@@ -198,7 +264,8 @@ function PostCard({ post, onUpdate, onRemove }) {
     setLocalPost(updated)
     onUpdate(changes)
     setEditing(false)
-    showMsg('Saved and approved')
+    showMsg(postingPaused ? 'Saved — held until you resume posting' : 'Saved and approved')
+    setLeaving(true)
     setTimeout(() => onRemove(), 1200)
     setSaving(false)
   }
@@ -225,27 +292,25 @@ function PostCard({ post, onUpdate, onRemove }) {
 
   return (
     <>
-      <div style={{
-        background: 'var(--white)',
-        border: '1px solid var(--fog-60)',
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: 'var(--shadow-md)',
-        overflow: 'hidden',
-        position: 'relative',
-      }}>
+      <div
+        data-post-id={post.id}
+        className={`stagger-item${highlighted ? ' highlight-ring' : ''}`}
+        style={{
+          '--i': index,
+          background: 'var(--white)',
+          border: '1px solid var(--fog-60)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-md)',
+          overflow: 'hidden',
+          position: 'relative',
+          transition: 'opacity 0.4s var(--ease-in-out), transform 0.4s var(--ease-in-out), max-height 0.4s var(--ease-in-out) 0.15s, margin 0.4s var(--ease-in-out) 0.15s',
+          opacity: leaving ? 0 : undefined,
+          transform: leaving ? 'scale(0.97) translateY(-4px)' : undefined,
+          pointerEvents: leaving ? 'none' : undefined,
+        }}
+      >
         {/* Toast */}
-        {toast && (
-          <div style={{
-            position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
-            background: toast.type === 'error' ? '#DC2626' : '#059669',
-            color: 'white', padding: '8px 18px', borderRadius: 99,
-            fontSize: '0.8125rem', fontWeight: 600, zIndex: 10,
-            whiteSpace: 'nowrap', boxShadow: 'var(--shadow-md)',
-            animation: 'fadeIn 0.2s ease',
-          }}>
-            {toast.type === 'error' ? '✕ ' : '✓ '}{toast.msg}
-          </div>
-        )}
+        <Toast toast={toast} />
 
         {/* Card header */}
         <div style={{
@@ -268,6 +333,7 @@ function PostCard({ post, onUpdate, onRemove }) {
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             <button
+              className="press"
               onClick={() => setShowReject(true)}
               disabled={saving}
               style={{ ...btn, background: 'var(--failed-bg)', color: 'var(--failed)', border: '1px solid var(--failed-border)' }}
@@ -275,6 +341,7 @@ function PostCard({ post, onUpdate, onRemove }) {
               ✕ Reject
             </button>
             <button
+              className="press"
               onClick={handleApprove}
               disabled={saving}
               style={{ ...btn, background: 'var(--done)', color: 'white', border: 'none' }}
@@ -289,31 +356,15 @@ function PostCard({ post, onUpdate, onRemove }) {
 
           {/* LEFT — image + editor */}
           <div style={{ padding: '20px 20px 20px 24px', borderRight: '1px solid var(--fog-60)' }}>
-            {/* <ImagePanel post={localPost} onImageUpdated={handleImageUpdated} /> */}
             {/* Image display */}
-{localPost.image_1_view_url || localPost.image_1_url ? (
-  <div style={{ marginBottom: 16, borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--fog-60)', position: 'relative' }}>
-    <img
-      src={localPost.image_1_view_url || localPost.image_1_url}
-      alt="Post image"
-      style={{ width: '100%', display: 'block', height: 180, objectFit: 'cover' }}
-    />
-  </div>
-) : (
-  <div style={{
-    marginBottom: 16,
-    height: 120,
-    borderRadius: 'var(--radius)',
-    border: '2px dashed var(--fog-60)',
-    background: 'var(--fog)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    flexDirection: 'column', gap: 6,
-    color: 'var(--ink-20)', fontSize: '0.8rem',
-  }}>
-    <span style={{ fontSize: '1.5rem' }}>🖼️</span>
-    No image attached
-  </div>
-)}
+            <div style={{ marginBottom: 16, border: (localPost.image_1_url || localPost.image_1_view_url) ? '1px solid var(--fog-60)' : 'none', borderRadius: 'var(--radius)' }}>
+              <FadeImage
+                src={localPost.image_1_url || localPost.image_1_view_url}
+                alt="Post image"
+                height={180}
+                radius="var(--radius)"
+              />
+            </div>
 
             {/* Platform tabs */}
             <div style={{ display: 'flex', borderBottom: '1px solid var(--fog-60)', marginBottom: 14 }}>
@@ -326,7 +377,9 @@ function PostCard({ post, onUpdate, onRemove }) {
                     color: tab === t.key ? 'var(--ink)' : 'var(--ink-20)',
                     borderBottom: tab === t.key ? '2px solid var(--ink)' : '2px solid transparent',
                     cursor: 'pointer', background: 'none', border: 'none',
+                    borderBottomWidth: 2, borderBottomStyle: 'solid',
                     fontFamily: 'var(--font-body)', marginBottom: -1,
+                    transition: 'color 0.18s ease, border-color 0.18s ease',
                   }}
                 >
                   {t.label}
@@ -377,10 +430,10 @@ function PostCard({ post, onUpdate, onRemove }) {
                     {charCount > cfg.charLimit && ' — over limit!'}
                   </span>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={cancelEdit} style={{ ...btn, background: 'var(--fog)', color: 'var(--ink-40)', border: '1px solid var(--fog-60)', fontSize: '0.78rem', padding: '5px 12px' }}>
+                    <button className="press" onClick={cancelEdit} style={{ ...btn, background: 'var(--fog)', color: 'var(--ink-40)', border: '1px solid var(--fog-60)', fontSize: '0.78rem', padding: '5px 12px' }}>
                       Cancel
                     </button>
-                    <button onClick={saveEdit} disabled={saving || charCount > cfg.charLimit} style={{ ...btn, background: charCount > cfg.charLimit ? 'var(--fog-60)' : 'var(--done)', color: charCount > cfg.charLimit ? 'var(--ink-20)' : 'white', border: 'none', fontSize: '0.78rem', padding: '5px 12px' }}>
+                    <button className="press" onClick={saveEdit} disabled={saving || charCount > cfg.charLimit} style={{ ...btn, background: charCount > cfg.charLimit ? 'var(--fog-60)' : 'var(--done)', color: charCount > cfg.charLimit ? 'var(--ink-20)' : 'white', border: 'none', fontSize: '0.78rem', padding: '5px 12px' }}>
                       {saving ? <Spinner light /> : 'Save & Approve'}
                     </button>
                   </div>
@@ -400,7 +453,7 @@ function PostCard({ post, onUpdate, onRemove }) {
                   {currentText || <span style={{ color: 'var(--ink-20)', fontStyle: 'italic' }}>No content for this platform</span>}
                 </div>
                 {currentText && (
-                  <button onClick={startEdit} style={{
+                  <button className="press hover-lift" onClick={startEdit} style={{
                     fontSize: '0.78rem', color: 'var(--ink-40)',
                     display: 'flex', alignItems: 'center', gap: 5,
                     cursor: 'pointer', padding: '5px 10px',
@@ -421,9 +474,9 @@ function PostCard({ post, onUpdate, onRemove }) {
               Preview
             </div>
             <div style={{ overflowY: 'auto', maxHeight: 560 }}>
-              {tab === 'linkedin'  && <LinkedInPreview  text={editing ? draftText : currentText} imageUrl={imageUrl} />}
-              {tab === 'instagram' && <InstagramPreview caption={editing ? draftText : currentText} imageUrl={imageUrl} />}
-              {tab === 'twitter'   && <XPreview         text={editing ? draftText : currentText} imageUrl={imageUrl} />}
+              {tab === 'linkedin'  && <LinkedInPreview  text={editing ? draftText : currentText} imageUrl={imageUrl} handle={accounts.linkedin} />}
+              {tab === 'instagram' && <InstagramPreview caption={editing ? draftText : currentText} imageUrl={imageUrl} handle={accounts.instagram} />}
+              {tab === 'twitter'   && <XPreview         text={editing ? draftText : currentText} imageUrl={imageUrl} handle={accounts.twitter} />}
             </div>
 
             {tab === 'twitter' && (
@@ -447,6 +500,7 @@ function PostCard({ post, onUpdate, onRemove }) {
       {/* ── Reject modal ─────────────────────────────────────────────────── */}
       {showReject && (
         <div
+          className="animate-in"
           onClick={e => e.target === e.currentTarget && setShowReject(false)}
           style={{
             position: 'fixed', inset: 0,
@@ -454,7 +508,7 @@ function PostCard({ post, onUpdate, onRemove }) {
             zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
           }}
         >
-          <div style={{
+          <div className="scale-in" style={{
             background: 'var(--white)', borderRadius: 'var(--radius-lg)',
             padding: '32px 36px', width: '100%', maxWidth: 420,
             boxShadow: 'var(--shadow-xl)',
@@ -486,12 +540,14 @@ function PostCard({ post, onUpdate, onRemove }) {
             />
             <div style={{ display: 'flex', gap: 10 }}>
               <button
+                className="press"
                 onClick={() => { setShowReject(false); setRejectReason('') }}
                 style={{ flex: 1, ...btn, background: 'var(--fog)', color: 'var(--ink-40)', border: '1px solid var(--fog-60)', justifyContent: 'center' }}
               >
                 Cancel
               </button>
               <button
+                className="press"
                 onClick={handleReject}
                 disabled={saving}
                 style={{ flex: 1, ...btn, background: 'var(--failed)', color: 'white', border: 'none', justifyContent: 'center' }}
@@ -507,28 +563,15 @@ function PostCard({ post, onUpdate, onRemove }) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-function Spinner({ light }) {
-  return (
-    <span style={{
-      width: 14, height: 14, flexShrink: 0,
-      border: `2px solid ${light ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.1)'}`,
-      borderTopColor: light ? 'white' : 'var(--ink-40)',
-      borderRadius: '50%',
-      animation: 'spin 0.7s linear infinite',
-      display: 'inline-block',
-    }} />
-  )
-}
-
 function EmptyState() {
   return (
-    <div style={{ textAlign: 'center', padding: '80px 40px', background: 'var(--white)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--fog-60)' }}>
+    <div className="pop-in" style={{ textAlign: 'center', padding: '80px 40px', background: 'var(--white)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--fog-60)' }}>
       <div style={{ fontSize: '3rem', marginBottom: 16 }}>✅</div>
       <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 400, marginBottom: 8 }}>Queue is clear</h2>
       <p style={{ color: 'var(--ink-20)', fontSize: '0.9rem', marginBottom: 24 }}>No posts awaiting approval.</p>
-      <a href="/dashboard/new-post" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 24px', background: 'var(--ink)', color: 'var(--white)', borderRadius: 'var(--radius-sm)', fontSize: '0.9rem', fontWeight: 500, textDecoration: 'none' }}>
+      <Link href="/dashboard/new-post" className="press hover-lift" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 24px', background: 'var(--ink)', color: 'var(--white)', borderRadius: 'var(--radius-sm)', fontSize: '0.9rem', fontWeight: 500, textDecoration: 'none' }}>
         + Generate New Post
-      </a>
+      </Link>
     </div>
   )
 }
@@ -536,9 +579,13 @@ function EmptyState() {
 function LoadingSkeleton() {
   return (
     <div style={{ padding: '32px 36px' }}>
-      <div style={{ height: 36, width: 200, background: 'var(--fog-60)', borderRadius: 6, marginBottom: 8, animation: 'pulse 1.5s ease infinite' }} />
-      <div style={{ height: 16, width: 140, background: 'var(--fog-60)', borderRadius: 6, marginBottom: 32, animation: 'pulse 1.5s ease infinite' }} />
-      {[1, 2].map(i => <div key={i} style={{ height: 480, background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-lg)', marginBottom: 24, animation: 'pulse 1.5s ease infinite' }} />)}
+      <Skeleton height={36} width={200} radius={6} style={{ marginBottom: 8 }} />
+      <Skeleton height={16} width={140} radius={6} style={{ marginBottom: 32 }} />
+      {[0, 1].map(i => (
+        <div key={i} className="stagger-item" style={{ '--i': i, height: 480, borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--fog-60)', marginBottom: 24 }}>
+          <Skeleton height="100%" radius={0} />
+        </div>
+      ))}
     </div>
   )
 }
@@ -562,7 +609,7 @@ function LinkedInPreview({ text, imageUrl }) {
         </div>
       </div>
       <p style={{ fontSize: '0.875rem', lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: 12 }}>{text || 'Your post text here...'}</p>
-      {imageUrl && <img src={imageUrl} alt="Preview" style={{ width: '100%', borderRadius: 6, maxHeight: 300, objectFit: 'cover' }} />}
+      {imageUrl && <FadeImage src={imageUrl} alt="Preview" height={220} radius={6} retryable={false} />}
     </div>
   )
 }
@@ -571,11 +618,7 @@ function InstagramPreview({ caption, imageUrl }) {
   return (
     <div style={{ border: '1px solid var(--fog-60)', borderRadius: 8, background: '#fff', overflow: 'hidden' }}>
       <div style={{ padding: 12, fontWeight: 600, fontSize: '0.875rem', borderBottom: '1px solid var(--fog-60)' }}>Instagram Preview</div>
-      {imageUrl ? (
-        <img src={imageUrl} alt="Preview" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover' }} />
-      ) : (
-        <div style={{ width: '100%', aspectRatio: '1/1', background: 'var(--fog)', display: 'grid', placeItems: 'center', color: 'gray', fontSize: '0.85rem' }}>No image attached</div>
-      )}
+      <FadeImage src={imageUrl} alt="Preview" aspectRatio="1/1" radius={0} retryable={false} />
       <div style={{ padding: 12 }}>
         <p style={{ fontSize: '0.8125rem', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{caption || 'Your caption here...'}</p>
       </div>
@@ -583,17 +626,23 @@ function InstagramPreview({ caption, imageUrl }) {
   )
 }
 
-function XPreview({ text, imageUrl }) {
+function XPreview({ text, imageUrl, handle }) {
   return (
     <div style={{ border: '1px solid var(--fog-60)', borderRadius: 8, padding: 16, background: '#fff' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#000', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 'bold' }}>X</div>
         <div>
-          <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>Your Name <span style={{ color: 'gray', fontWeight: 400 }}>@handle</span></div>
+          <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>
+            {handle ? (
+              <span style={{ color: 'gray', fontWeight: 400 }}>@{handle}</span>
+            ) : (
+              <span style={{ color: 'var(--ink-20)', fontWeight: 400, fontStyle: 'italic' }}>No X account connected — connect in Settings</span>
+            )}
+          </div>
         </div>
       </div>
       <p style={{ fontSize: '0.875rem', lineHeight: 1.4, whiteSpace: 'pre-wrap', marginBottom: 10 }}>{text || 'What is happening?!'}</p>
-      {imageUrl && <img src={imageUrl} alt="Preview" style={{ width: '100%', borderRadius: 8, maxHeight: 250, objectFit: 'cover' }} />}
+      {imageUrl && <FadeImage src={imageUrl} alt="Preview" height={220} radius={8} retryable={false} />}
     </div>
   )
 }

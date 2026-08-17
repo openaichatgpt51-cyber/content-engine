@@ -1,4 +1,5 @@
 import Sidebar from '../../components/Sidebar'
+import ConnectPlatformBanner from '../../components/ConnectPlatformBanner'
 
 export default function DashboardLayout({ children }) {
   return (
@@ -11,6 +12,7 @@ export default function DashboardLayout({ children }) {
         display: 'flex',
         flexDirection: 'column',
       }}>
+        <ConnectPlatformBanner />
         {children}
       </main>
     </div>

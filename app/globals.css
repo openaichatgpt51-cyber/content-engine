@@ -82,10 +82,21 @@ input, textarea, select {
 ::-webkit-scrollbar-track { background: var(--fog-60); }
 ::-webkit-scrollbar-thumb { background: var(--ink-20); border-radius: 3px; }
 
-/* Animations */
+/* ── Easing tokens ─────────────────────────────────────────────────────── */
+:root {
+  --ease-out:      cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out:   cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring:   cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Keyframes ─────────────────────────────────────────────────────────── */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-26px); }
+  to   { opacity: var(--drop-opacity, 1); transform: translateY(0); }
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -98,6 +109,189 @@ input, textarea, select {
   from { opacity: 0; transform: translateX(-12px); }
   to   { opacity: 1; transform: translateX(0); }
 }
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(32px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.94) translateY(4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, -10px) scale(0.92); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes toastOut {
+  from { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  to   { opacity: 0; transform: translate(-50%, -6px) scale(0.96); }
+}
+@keyframes popIn {
+  0%   { opacity: 0; transform: scale(0.5); }
+  60%  { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+@keyframes checkDraw {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+@keyframes progressStripe {
+  from { background-position: 0 0; }
+  to   { background-position: 28px 0; }
+}
 
-.animate-in { animation: fadeIn 0.3s ease forwards; }
-.slide-in   { animation: slideIn 0.25s ease forwards; }
+/* ── Entrance utilities ────────────────────────────────────────────────── */
+.animate-in { animation: fadeIn 0.35s var(--ease-out) forwards; }
+.slide-in   { animation: slideIn 0.3s var(--ease-out) forwards; }
+.slide-in-right { animation: slideInRight 0.32s var(--ease-out) forwards; }
+.scale-in   { animation: scaleIn 0.22s var(--ease-spring) forwards; }
+.pop-in     { animation: popIn 0.4s var(--ease-spring) forwards; }
+.shake-once { animation: shake 0.4s var(--ease-in-out); }
+
+/* Staggered list entrance — apply .stagger-item with an inline --i index.
+   Cards visibly drop down and settle with a small spring overshoot, one
+   after another — not a same-instant fade. */
+.stagger-item {
+  opacity: 0;
+  animation: dropIn 0.65s var(--ease-spring) forwards;
+  animation-delay: calc(var(--i, 0) * 110ms);
+}
+
+/* ── Interactive feedback ──────────────────────────────────────────────── */
+.hover-lift {
+  transition: transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), border-color 0.2s var(--ease-out);
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.hover-lift:active {
+  transform: translateY(0px) scale(0.99);
+}
+
+.press {
+  transition: transform 0.12s var(--ease-out), opacity 0.12s var(--ease-out), background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.press:hover  { opacity: 0.92; }
+.press:active { transform: scale(0.96); }
+.press:disabled { transform: none; opacity: 0.6; }
+
+.tap-scale { transition: transform 0.15s var(--ease-spring); }
+.tap-scale:active { transform: scale(0.94); }
+
+.underline-grow {
+  position: relative;
+}
+.underline-grow::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 2px;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.25s var(--ease-out);
+}
+.underline-grow.active::after { transform: scaleX(1); }
+
+/* Focus ring, keyboard-only */
+a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent-warm);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Skeleton / shimmer loading ────────────────────────────────────────── */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--fog-60);
+  background-image: linear-gradient(
+    100deg,
+    var(--fog-60) 30%,
+    #ffffff 50%,
+    var(--fog-60) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+/* ── Image fade-in-on-load ────────────────────────────────────────────── */
+.img-fade {
+  opacity: 0;
+  transition: opacity 0.4s var(--ease-out);
+}
+.img-fade.loaded { opacity: 1; }
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.toast-in  { animation: toastIn 0.28s var(--ease-spring) forwards; }
+.toast-out { animation: toastOut 0.2s var(--ease-in-out) forwards; }
+
+/* Progress bar diagonal stripes while indeterminate work is happening */
+.progress-stripes {
+  background-image: linear-gradient(
+    135deg,
+    rgba(255,255,255,0.18) 25%, transparent 25%,
+    transparent 50%, rgba(255,255,255,0.18) 50%,
+    rgba(255,255,255,0.18) 75%, transparent 75%, transparent
+  );
+  background-size: 28px 28px;
+  animation: progressStripe 0.9s linear infinite;
+}
+
+/* ── Calendar day hover ────────────────────────────────────────────────── */
+.cal-day { transition: background-color 0.15s ease; }
+.cal-day--clickable:hover { background-color: var(--fog) !important; cursor: pointer; }
+.cal-day--clickable:hover .cal-day-date { transform: scale(1.1); }
+.cal-day-date { transition: transform 0.15s var(--ease-spring); }
+.cal-chip { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.cal-day--clickable:hover .cal-chip { transform: translateX(1px); }
+
+/* Unavailable scheduling day — diagonal stripe, distinct from the plain
+   opacity dimming used for out-of-month cells so the two meanings never
+   look the same. */
+.cal-day--unavailable {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 6px,
+    transparent 6px, transparent 12px
+  );
+}
+.cal-day--unavailable .cal-day-date { color: var(--ink-20) !important; }
+/* ── Sidebar nav ──────────────────────────────────────────────────────── */
+.nav-item {
+  transition: background-color 0.18s ease, color 0.18s ease, padding-left 0.18s ease;
+}
+.nav-item:hover:not(.nav-item--active) {
+  background-color: rgba(255,255,255,0.05) !important;
+  color: rgba(255,255,255,0.75) !important;
+  padding-left: 16px !important;
+}
+.nav-item--active {
+  animation: navActiveIn 0.25s var(--ease-spring);
+}
+@keyframes navActiveIn {
+  from { padding-left: 20px; }
+  to   { padding-left: 12px; }
+}
+.badge-pop { animation: popIn 0.35s var(--ease-spring); }
+.signout-btn { transition: color 0.18s ease, background-color 0.18s ease; }
+.signout-btn:hover { color: rgba(255,255,255,0.85) !important; background-color: rgba(255,255,255,0.05); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

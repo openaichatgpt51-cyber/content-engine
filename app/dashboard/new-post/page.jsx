@@ -1,6 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { Spinner } from '../../../components/ui'
 
 const TONES = [
   { value: 'professional', label: 'Professional', desc: 'Formal, authoritative, data-driven' },
@@ -79,10 +81,10 @@ export default function NewPostPage() {
 
       {/* Header */}
       <div style={{ marginBottom: 36 }}>
-        <a href="/dashboard" style={{ fontSize: '0.8rem', color: 'var(--ink-20)', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16, width: 'fit-content' }}>
+        <Link href="/dashboard" className="press" style={{ fontSize: '0.8rem', color: 'var(--ink-20)', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16, width: 'fit-content' }}>
           ← Back to Calendar
-        </a>
-        <h1 style={{
+        </Link>
+        <h1 className="animate-in" style={{
           fontFamily: 'var(--font-display)',
           fontSize: '2rem',
           fontWeight: 400,
@@ -100,7 +102,7 @@ export default function NewPostPage() {
       <form onSubmit={handleSubmit}>
 
         {/* Topic input */}
-        <Section label="What's the topic?" step="01">
+        <Section label="What's the topic?" step="01" index={0}>
           <textarea
             value={topic}
             onChange={e => setTopic(e.target.value)}
@@ -117,11 +119,11 @@ export default function NewPostPage() {
               color: 'var(--ink)',
               resize: 'vertical',
               outline: 'none',
-              transition: 'border-color 0.15s',
+              transition: 'border-color 0.15s, box-shadow 0.15s',
               lineHeight: 1.6,
             }}
-            onFocus={e  => e.target.style.borderColor = 'var(--ink-40)'}
-            onBlur={e   => e.target.style.borderColor = 'var(--fog-60)'}
+            onFocus={e  => { e.target.style.borderColor = 'var(--ink-40)'; e.target.style.boxShadow = '0 0 0 3px rgba(0,0,0,0.04)' }}
+            onBlur={e   => { e.target.style.borderColor = 'var(--fog-60)'; e.target.style.boxShadow = 'none' }}
           />
           <div style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 6 }}>
             Be specific — include an angle, year, or target audience for best results.
@@ -129,12 +131,13 @@ export default function NewPostPage() {
         </Section>
 
         {/* Tone selector */}
-        <Section label="Tone of voice" step="02">
+        <Section label="Tone of voice" step="02" index={1}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
             {TONES.map(t => (
               <button
                 key={t.value}
                 type="button"
+                className="press hover-lift"
                 onClick={() => setTone(t.value)}
                 style={{
                   padding: '14px 16px',
@@ -144,7 +147,7 @@ export default function NewPostPage() {
                   border: `1.5px solid ${tone === t.value ? 'var(--ink)' : 'var(--fog-60)'}`,
                   borderRadius: 'var(--radius)',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition: 'background 0.15s ease, color 0.15s ease, border-color 0.15s ease',
                 }}
               >
                 <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: 3 }}>{t.label}</div>
@@ -155,13 +158,14 @@ export default function NewPostPage() {
         </Section>
 
         {/* Platform checkboxes */}
-        <Section label="Publish to" step="03">
+        <Section label="Publish to" step="03" index={2}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {PLATFORM_OPTIONS.map(p => {
               const checked = platforms.includes(p.value)
               return (
                 <label
                   key={p.value}
+                  className="hover-lift"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -171,7 +175,7 @@ export default function NewPostPage() {
                     border: `1.5px solid ${checked ? 'var(--ink-60)' : 'var(--fog-60)'}`,
                     borderRadius: 'var(--radius)',
                     cursor: 'pointer',
-                    transition: 'all 0.15s ease',
+                    transition: 'background 0.15s ease, border-color 0.15s ease',
                   }}
                 >
                   <input
@@ -180,7 +184,7 @@ export default function NewPostPage() {
                     onChange={() => togglePlatform(p.value)}
                     style={{ width: 16, height: 16, accentColor: 'var(--ink)', cursor: 'pointer' }}
                   />
-                  <span style={{ fontSize: '1.2rem' }}>{p.icon}</span>
+                  <span className="tap-scale" style={{ fontSize: '1.2rem', display: 'inline-block' }}>{p.icon}</span>
                   <div>
                     <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{p.label}</div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--ink-20)' }}>{p.desc}</div>
@@ -193,7 +197,7 @@ export default function NewPostPage() {
 
         {/* Error */}
         {error && (
-          <div style={{
+          <div className="animate-in shake-once" style={{
             padding: '12px 16px',
             background: 'var(--failed-bg)',
             border: '1px solid var(--failed-border)',
@@ -208,9 +212,10 @@ export default function NewPostPage() {
 
         {/* Progress bar */}
         {loading && (
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--ink-40)', marginBottom: 8 }}>
-              <span>
+          <div className="animate-in" style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'var(--ink-40)', marginBottom: 8 }}>
+              <span key={progress < 20 ? 'a' : progress < 50 ? 'b' : progress < 80 ? 'c' : progress < 100 ? 'd' : 'e'} className="animate-in" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                {progress < 100 && <Spinner size={12} />}
                 {progress < 20  ? '🔍 Researching topic…'   :
                  progress < 50  ? '✍️  Writing content…'    :
                  progress < 80  ? '🎨 Fetching images…'     :
@@ -225,12 +230,15 @@ export default function NewPostPage() {
               borderRadius: 99,
               overflow: 'hidden',
             }}>
-              <div style={{
+              {/* backgroundColor (not the `background` shorthand) so the
+                  .progress-stripes class's background-image isn't reset —
+                  a shorthand here silently wipes the stripe animation. */}
+              <div className={progress < 100 ? 'progress-stripes' : ''} style={{
                 height: '100%',
                 width: `${progress}%`,
-                background: progress === 100 ? 'var(--done)' : 'var(--ink)',
+                backgroundColor: progress === 100 ? 'var(--done)' : 'var(--ink)',
                 borderRadius: 99,
-                transition: 'width 1s ease, background 0.3s ease',
+                transition: 'width 1.1s var(--ease-out), background-color 0.3s ease',
               }} />
             </div>
             <p style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 8 }}>
@@ -243,6 +251,7 @@ export default function NewPostPage() {
         <button
           type="submit"
           disabled={loading}
+          className="press hover-lift"
           style={{
             width: '100%',
             padding: '15px 24px',
@@ -252,7 +261,7 @@ export default function NewPostPage() {
             fontSize: '1rem',
             fontWeight: 600,
             cursor: loading ? 'not-allowed' : 'pointer',
-            transition: 'all 0.2s ease',
+            transition: 'background 0.2s ease, color 0.2s ease',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -261,15 +270,7 @@ export default function NewPostPage() {
         >
           {loading ? (
             <>
-              <span style={{
-                width: 18, height: 18,
-                border: '2px solid rgba(0,0,0,0.15)',
-                borderTopColor: 'var(--ink-40)',
-                borderRadius: '50%',
-                animation: 'spin 0.7s linear infinite',
-                display: 'inline-block',
-                flexShrink: 0,
-              }} />
+              <Spinner size={18} />
               Generating…
             </>
           ) : (
@@ -281,9 +282,10 @@ export default function NewPostPage() {
   )
 }
 
-function Section({ label, step, children }) {
+function Section({ label, step, children, index = 0 }) {
   return (
-    <div style={{
+    <div className="stagger-item" style={{
+      '--i': index,
       background: 'var(--white)',
       border: '1px solid var(--fog-60)',
       borderRadius: 'var(--radius-lg)',

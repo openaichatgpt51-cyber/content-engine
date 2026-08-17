@@ -1,7 +1,9 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
+import { FadeImage, Skeleton, Toast } from '../../components/ui'
 
 const PLATFORMS = ['All', 'LinkedIn', 'Instagram', 'X']
 
@@ -11,6 +13,7 @@ const STATUS_CONFIG = {
   DONE:              { label: 'Published',  color: 'var(--done)',     bg: 'var(--done-bg)',     border: 'var(--done-border)'     },
   FAILED:            { label: 'Failed',     color: 'var(--failed)',   bg: 'var(--failed-bg)',   border: 'var(--failed-border)'   },
   IN_PROGRESS:       { label: 'Posting…',  color: 'var(--pending)',  bg: 'var(--pending-bg)',  border: 'var(--pending-border)'  },
+  HALTED:            { label: 'Paused',     color: 'var(--ink-40)',   bg: 'var(--fog)',         border: 'var(--fog-60)'          },
 }
 
 // Generate week grid: 5 weeks shown
@@ -60,6 +63,11 @@ export default function DashboardPage() {
   const [viewYear,   setViewYear]   = useState(today.getFullYear())
   const [viewMonth,  setViewMonth]  = useState(today.getMonth())
   const [selected,   setSelected]   = useState(null) // selected post for detail panel
+  const [dayList,    setDayList]    = useState(null) // { date, posts } — full list for a clicked day
+  const [postingDays, setPostingDays] = useState(null) // e.g. ['Monday','Wednesday','Friday'] — null while loading
+  const [dragPost,    setDragPost]    = useState(null) // post currently being dragged
+  const [dragOverKey,  setDragOverKey]  = useState(null) // date key of the cell currently under the drag
+  const [toast,        setToast]        = useState(null)
 
   useEffect(() => {
     async function load() {
@@ -71,19 +79,101 @@ export default function DashboardPage() {
         return
       }
 
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('client_id', user.id)
-        .order('linkedin_scheduled_time', { ascending: true })
+      const [postsRes, onboardingRes] = await Promise.all([
+        supabase.from('posts').select('*').eq('client_id', user.id).order('linkedin_scheduled_time', { ascending: true }),
+        supabase.from('onboarding').select('posting_days').eq('client_id', user.id).maybeSingle(),
+      ])
 
-      if (!error) setPosts(data || [])
+      if (!postsRes.error) setPosts(postsRes.data || [])
+      setPostingDays(onboardingRes.data?.posting_days || null)
       setLoading(false)
     }
     load()
   }, [])
 
   const calDays = useMemo(() => buildCalendarDays(viewYear, viewMonth), [viewYear, viewMonth])
+
+  // A day is a valid scheduling target if it's one of the client's chosen
+  // posting days (from onboarding) and isn't in the past. If posting_days
+  // was never set, every day is treated as available (nothing to grey out).
+  function isDayAvailable(date) {
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    if (date < startOfToday) return false
+    if (!postingDays || postingDays.length === 0) return true
+    const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][date.getDay()]
+    return postingDays.includes(dayName)
+  }
+
+  function showToast(msg, type = 'success') {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  // ── Drag and drop rescheduling ──────────────────────────────────────────
+  function handleDragStart(e, post) {
+    setDragPost(post)
+    e.dataTransfer.effectAllowed = 'move'
+    // Firefox requires data to be set for drag to initiate at all
+    e.dataTransfer.setData('text/plain', post.id)
+  }
+
+  function handleDragEnd() {
+    setDragPost(null)
+    setDragOverKey(null)
+  }
+
+  function handleDragOverDay(e, date, available) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = available ? 'move' : 'none'
+    const key = date.toDateString()
+    if (dragOverKey !== key) setDragOverKey(key)
+  }
+
+  async function handleDropOnDay(e, date, available) {
+    e.preventDefault()
+    setDragOverKey(null)
+    const post = dragPost
+    setDragPost(null)
+    if (!post) return
+
+    if (!available) {
+      showToast(
+        date < new Date(today.getFullYear(), today.getMonth(), today.getDate())
+          ? "Can't schedule into the past"
+          : 'Not a posting day — check Settings to change your schedule',
+        'error'
+      )
+      return
+    }
+
+    const refDate = new Date(post.linkedin_scheduled_time || post.instagram_scheduled_time || post.twitter_scheduled_time)
+    if (sameDay(refDate, date)) return // dropped on the same day it's already on
+
+    const dayDelta = Math.round((new Date(date.getFullYear(), date.getMonth(), date.getDate()) - new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate())) / 86400000)
+
+    const changes = {}
+    for (const field of ['linkedin_scheduled_time', 'instagram_scheduled_time', 'twitter_scheduled_time']) {
+      if (post[field]) {
+        const d = new Date(post[field])
+        d.setDate(d.getDate() + dayDelta)
+        changes[field] = d.toISOString()
+      }
+    }
+
+    // Optimistic update
+    setPosts(ps => ps.map(p => p.id === post.id ? { ...p, ...changes } : p))
+
+    const { error } = await supabase.from('posts').update(changes).eq('id', post.id)
+
+    if (error) {
+      // Roll back on failure
+      setPosts(ps => ps.map(p => p.id === post.id ? post : p))
+      showToast('Failed to reschedule — ' + error.message, 'error')
+      return
+    }
+
+    showToast(`Moved to ${date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}`)
+  }
 
   // Filter posts by platform
   const filteredPosts = useMemo(() =>
@@ -122,7 +212,8 @@ export default function DashboardPage() {
   }
 
   return (
-    <div style={{ padding: '32px 36px', flex: 1 }}>
+    <div style={{ padding: '32px 36px', flex: 1, position: 'relative' }}>
+      <Toast toast={toast} />
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32 }}>
@@ -141,7 +232,7 @@ export default function DashboardPage() {
             {posts.length} posts scheduled · {stats.review} awaiting review
           </p>
         </div>
-        <a href="/dashboard/new-post" style={{
+        <Link href="/dashboard/new-post" className="press hover-lift" style={{
           display: 'flex',
           alignItems: 'center',
           gap: 8,
@@ -151,11 +242,10 @@ export default function DashboardPage() {
           borderRadius: 'var(--radius-sm)',
           fontSize: '0.875rem',
           fontWeight: 500,
-          transition: 'opacity 0.15s',
         }}>
           <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>+</span>
           New Post
-        </a>
+        </Link>
       </div>
 
       {/* Stats row */}
@@ -165,10 +255,11 @@ export default function DashboardPage() {
           { label: 'In Review',  value: stats.review,   status: 'AWAITING_APPROVAL' },
           { label: 'Published',  value: stats.done,     status: 'DONE' },
           { label: 'Failed',     value: stats.failed,   status: 'FAILED' },
-        ].map(({ label, value, status }) => {
+        ].map(({ label, value, status }, i) => {
           const cfg = STATUS_CONFIG[status]
           return (
-            <div key={status} className="animate-in" style={{
+            <div key={status} className="stagger-item hover-lift" style={{
+              '--i': i,
               background: 'var(--white)',
               border: `1px solid var(--fog-60)`,
               borderRadius: 'var(--radius)',
@@ -196,7 +287,7 @@ export default function DashboardPage() {
         {/* Platform pills */}
         <div style={{ display: 'flex', gap: 6 }}>
           {PLATFORMS.map(p => (
-            <button key={p} onClick={() => setPlatform(p)} style={{
+            <button key={p} className="press" onClick={() => setPlatform(p)} style={{
               padding: '6px 14px',
               borderRadius: 99,
               fontSize: '0.8125rem',
@@ -214,22 +305,30 @@ export default function DashboardPage() {
 
         {/* Month navigation */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <button onClick={prevMonth} style={{ ...navBtn }}>←</button>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', color: 'var(--ink)', minWidth: 180, textAlign: 'center' }}>
+          <button className="press hover-lift" onClick={prevMonth} style={{ ...navBtn }}>←</button>
+          <span key={monthLabel} className="animate-in" style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', color: 'var(--ink)', minWidth: 180, textAlign: 'center', display: 'inline-block' }}>
             {monthLabel}
           </span>
-          <button onClick={nextMonth} style={{ ...navBtn }}>→</button>
+          <button className="press hover-lift" onClick={nextMonth} style={{ ...navBtn }}>→</button>
         </div>
       </div>
 
       {/* Legend */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         {Object.entries(STATUS_CONFIG).filter(([k]) => k !== 'IN_PROGRESS').map(([key, cfg]) => (
           <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.color, display: 'inline-block' }} />
             <span style={{ fontSize: '0.75rem', color: 'var(--ink-40)' }}>{cfg.label}</span>
           </div>
         ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{
+            width: 12, height: 8, borderRadius: 2, display: 'inline-block',
+            backgroundImage: 'repeating-linear-gradient(135deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 2px, transparent 2px, transparent 4px)',
+            border: '1px solid var(--fog-60)',
+          }} />
+          <span style={{ fontSize: '0.75rem', color: 'var(--ink-40)' }}>Not a posting day — drag here is blocked</span>
+        </div>
       </div>
 
       {/* Calendar grid */}
@@ -259,16 +358,24 @@ export default function DashboardPage() {
 
         {/* Weeks */}
         {loading ? (
-          <div style={{ padding: 60, textAlign: 'center', color: 'var(--ink-20)' }}>
-            <div style={{
-              width: 28, height: 28,
-              border: '2px solid var(--fog-60)',
-              borderTopColor: 'var(--ink-40)',
-              borderRadius: '50%',
-              animation: 'spin 0.7s linear infinite',
-              margin: '0 auto 12px',
-            }} />
-            Loading calendar…
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+            {Array.from({ length: 35 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="stagger-item"
+                style={{
+                  '--i': Math.floor(idx / 7),
+                  minHeight: 110,
+                  padding: '8px 10px',
+                  borderRight: (idx + 1) % 7 !== 0 ? '1px solid var(--fog-60)' : 'none',
+                  borderBottom: idx < 28 ? '1px solid var(--fog-60)' : 'none',
+                }}
+              >
+                <Skeleton width={22} height={22} radius={99} style={{ marginBottom: 8 }} />
+                {(idx % 5 === 0) && <Skeleton height={14} radius={4} style={{ marginBottom: 4 }} />}
+                {(idx % 7 === 0) && <Skeleton height={14} width="70%" radius={4} />}
+              </div>
+            ))}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
@@ -276,24 +383,36 @@ export default function DashboardPage() {
               const dayPosts   = postsOnDay(date)
               const isToday    = sameDay(date, today)
               const isWeekend  = date.getDay() === 0 || date.getDay() === 6
+              const available  = isDayAvailable(date)
+              const isDragOver = dragOverKey === date.toDateString()
+              const isDropTarget = Boolean(dragPost)
 
               return (
                 <div
                   key={idx}
+                  className={`cal-day stagger-item${dayPosts.length ? ' cal-day--clickable' : ''}${!available ? ' cal-day--unavailable' : ''}`}
                   style={{
+                    '--i': Math.floor(idx / 7),
+                    '--drop-opacity': current ? 1 : 0.35,
                     minHeight: 110,
                     padding: '8px 10px',
                     borderRight: (idx + 1) % 7 !== 0 ? '1px solid var(--fog-60)' : 'none',
                     borderBottom: idx < 35 ? '1px solid var(--fog-60)' : 'none',
-                    background: isWeekend && current ? 'rgba(0,0,0,0.012)' : 'transparent',
-                    opacity: current ? 1 : 0.35,
+                    background: isDragOver
+                      ? (available ? 'rgba(5,150,105,0.1)' : 'rgba(220,38,38,0.08)')
+                      : (isWeekend && current ? 'rgba(0,0,0,0.012)' : 'transparent'),
+                    outline: isDragOver ? `2px dashed ${available ? 'var(--done)' : 'var(--failed)'}` : 'none',
+                    outlineOffset: '-2px',
                     cursor: dayPosts.length ? 'pointer' : 'default',
-                    transition: 'background 0.1s',
+                    transition: 'background 0.12s ease',
                   }}
-                  onClick={() => dayPosts.length && setSelected(dayPosts[0])}
+                  onClick={() => dayPosts.length && setDayList({ date, posts: dayPosts })}
+                  onDragOver={e => isDropTarget && handleDragOverDay(e, date, available)}
+                  onDragLeave={() => setDragOverKey(k => k === date.toDateString() ? null : k)}
+                  onDrop={e => handleDropOnDay(e, date, available)}
                 >
                   {/* Date number */}
-                  <div style={{
+                  <div className="cal-day-date" style={{
                     fontSize: '0.78rem',
                     fontWeight: isToday ? 700 : 400,
                     color: isToday ? 'var(--white)' : 'var(--ink-40)',
@@ -309,14 +428,25 @@ export default function DashboardPage() {
                     {date.getDate()}
                   </div>
 
-                  {/* Post chips */}
+                  {/* Post chips — clicking a chip jumps straight to that post;
+                      clicking anywhere else in the cell (including "+N more")
+                      opens the full list for the day via the cell's onClick above.
+                      Chips are draggable to reschedule (only PENDING/HALTED/
+                      AWAITING_APPROVAL posts make sense to move — published/
+                      in-flight ones are locked). */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {dayPosts.slice(0, 3).map((post, i) => {
                       const cfg = STATUS_CONFIG[post.posting_status] || STATUS_CONFIG['PENDING']
+                      const locked = !['PENDING', 'HALTED', 'AWAITING_APPROVAL'].includes(post.posting_status)
                       return (
                         <div
                           key={post.id || i}
-                          title={post.topic}
+                          className="cal-chip"
+                          title={locked ? `${post.topic} — already ${cfg.label.toLowerCase()}, can't be rescheduled` : `${post.topic} (drag to reschedule)`}
+                          draggable={!locked}
+                          onDragStart={e => { e.stopPropagation(); handleDragStart(e, post) }}
+                          onDragEnd={handleDragEnd}
+                          onClick={e => { e.stopPropagation(); setSelected(post) }}
                           style={{
                             background: cfg.bg,
                             border: `1px solid ${cfg.border}`,
@@ -330,14 +460,16 @@ export default function DashboardPage() {
                             whiteSpace: 'nowrap',
                             textOverflow: 'ellipsis',
                             maxWidth: '100%',
+                            cursor: locked ? 'pointer' : 'grab',
+                            opacity: dragPost?.id === post.id ? 0.4 : 1,
                           }}
                         >
-                          {post.topic?.split(' ').slice(0, 4).join(' ')}…
+                          {locked && '🔒 '}{post.topic?.split(' ').slice(0, 4).join(' ')}…
                         </div>
                       )
                     })}
                     {dayPosts.length > 3 && (
-                      <div style={{ fontSize: '0.65rem', color: 'var(--ink-20)', paddingLeft: 4 }}>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--ink-20)', paddingLeft: 4, fontWeight: 600 }}>
                         +{dayPosts.length - 3} more
                       </div>
                     )}
@@ -352,6 +484,7 @@ export default function DashboardPage() {
       {/* Post detail side panel */}
       {selected && (
         <div
+          className="animate-in"
           onClick={e => e.target === e.currentTarget && setSelected(null)}
           style={{
             position: 'fixed', inset: 0,
@@ -362,7 +495,7 @@ export default function DashboardPage() {
             justifyContent: 'flex-end',
           }}
         >
-          <div className="slide-in" style={{
+          <div className="slide-in-right" style={{
             width: 400,
             height: '100vh',
             background: 'var(--white)',
@@ -372,7 +505,7 @@ export default function DashboardPage() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', fontWeight: 400 }}>Post Detail</h2>
-              <button onClick={() => setSelected(null)} style={{ color: 'var(--ink-20)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+              <button className="press tap-scale" onClick={() => setSelected(null)} style={{ color: 'var(--ink-20)', fontSize: '1.2rem', cursor: 'pointer', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
             </div>
 
             {/* Status badge */}
@@ -403,9 +536,9 @@ export default function DashboardPage() {
             </h3>
 
             {/* Image */}
-            {selected.image_1_view_url && (
+            {(selected.image_1_url || selected.image_1_view_url) && (
               <div style={{ marginBottom: 16, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--fog-60)' }}>
-                <img src={selected.image_1_view_url} alt="Post image" style={{ width: '100%', display: 'block', objectFit: 'cover', maxHeight: 180 }} />
+                <FadeImage src={selected.image_1_url || selected.image_1_view_url} alt="Post image" height={180} />
               </div>
             )}
 
@@ -451,7 +584,7 @@ export default function DashboardPage() {
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <a href={`/dashboard/review`} style={{
+              <Link href={`/dashboard/review?postId=${selected.id}`} className="press hover-lift" style={{
                 flex: 1,
                 padding: '10px 0',
                 textAlign: 'center',
@@ -462,7 +595,56 @@ export default function DashboardPage() {
                 fontWeight: 500,
               }}>
                 Open in Review
-              </a>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Day list — full list of posts for a day with 4+ items ────────── */}
+      {dayList && (
+        <div
+          className="animate-in"
+          onClick={e => e.target === e.currentTarget && setDayList(null)}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(13,13,15,0.5)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 250,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <div className="scale-in" style={{
+            width: '100%', maxWidth: 420, maxHeight: '70vh',
+            background: 'var(--white)', borderRadius: 'var(--radius-lg)',
+            boxShadow: 'var(--shadow-xl)', overflow: 'hidden',
+            display: 'flex', flexDirection: 'column',
+          }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--fog-60)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 400 }}>
+                {dayList.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </h3>
+              <button className="press tap-scale" onClick={() => setDayList(null)} style={{ color: 'var(--ink-20)', fontSize: '1.1rem', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '8px 12px' }}>
+              {dayList.posts.map((post, i) => {
+                const cfg = STATUS_CONFIG[post.posting_status] || STATUS_CONFIG['PENDING']
+                return (
+                  <div
+                    key={post.id || i}
+                    className="stagger-item hover-lift press"
+                    style={{ '--i': i, padding: '12px 14px', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
+                    onClick={() => { setSelected(post); setDayList(null) }}
+                  >
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{post.topic}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--ink-20)' }}>{cfg.label}</div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>

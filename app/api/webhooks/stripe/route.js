@@ -1,26 +1,6 @@
 import { NextResponse } from 'next/server'
-import Stripe from 'stripe'
-import { createClient } from '@supabase/supabase-js'
-
-const stripe    = new Stripe(process.env.STRIPE_SECRET_KEY)
-const supabase  = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
-
-const PLAN_LIMITS = {
-  starter: 30,
-  growth:  120,
-  agency:  99999,
-}
-
-function getPlanFromPriceId(priceId) {
-  if (priceId === process.env.STRIPE_STARTER_PRICE_ID) return 'starter'
-  if (priceId === process.env.STRIPE_GROWTH_PRICE_ID)  return 'growth'
-  if (priceId === process.env.STRIPE_AGENCY_PRICE_ID)  return 'agency'
-  return 'starter'
-}
+import { stripe, getPlanByPriceId, getPlanLimits } from '../../../../lib/stripe'
+import { supabaseAdmin } from '../../../../lib/supabase-admin'
 
 export async function POST(request) {
   const body = await request.text()
@@ -28,127 +8,135 @@ export async function POST(request) {
 
   let event
   try {
-    event = stripe.webhooks.constructEvent(
-      body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    )
+    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET)
   } catch (err) {
-    console.error('Webhook signature failed:', err.message)
+    console.error('Webhook signature verification failed:', err.message)
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
   try {
     switch (event.type) {
 
-      // ── New subscription created ──────────────────────────────────────
+      // ── New subscription created / trial started ──────────────
       case 'checkout.session.completed': {
         const session = event.data.object
         const userId  = session.metadata?.supabase_user_id
         const planKey = session.metadata?.plan || 'starter'
         if (!userId) break
 
-        const stripeSub = await stripe.subscriptions.retrieve(session.subscription)
-        const planLimit = PLAN_LIMITS[planKey] || 30
+        const plan = getPlanLimits(planKey)
+        const sub  = await stripe.subscriptions.retrieve(session.subscription)
 
-        await supabase.from('subscriptions').upsert({
+        await supabaseAdmin.from('subscriptions').upsert({
           client_id:              userId,
           stripe_customer_id:     session.customer,
           stripe_subscription_id: session.subscription,
           plan:                   planKey,
-          status:                 stripeSub.status,
+          status:                 sub.status,
           posts_used:             0,
-          posts_limit:            planLimit,
-          current_period_start:   new Date(stripeSub.current_period_start * 1000).toISOString(),
-          current_period_end:     new Date(stripeSub.current_period_end   * 1000).toISOString(),
+          posts_limit:            plan.posts_limit,
+          current_period_start:   new Date(sub.current_period_start * 1000).toISOString(),
+          current_period_end:     new Date(sub.current_period_end   * 1000).toISOString(),
           updated_at:             new Date().toISOString(),
         }, { onConflict: 'client_id' })
 
-        console.log(`Subscription created: ${userId} on ${planKey}`)
+        console.log(`Subscription created for user ${userId} on ${planKey} plan`)
         break
       }
 
-      // ── Subscription cancelled ────────────────────────────────────────
-      case 'customer.subscription.deleted': {
-        const sub = event.data.object
-
-        await supabase
-          .from('subscriptions')
-          .update({
-            status:     'canceled',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('stripe_subscription_id', sub.id)
-
-        console.log(`Subscription cancelled: ${sub.id}`)
-        break
-      }
-
-      // ── Payment succeeded — reset monthly post count ──────────────────
+      // ── Subscription renewed — reset post count ───────────────
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object
         if (invoice.billing_reason !== 'subscription_cycle') break
 
         const stripeSub = await stripe.subscriptions.retrieve(invoice.subscription)
-        const priceId   = stripeSub.items.data[0]?.price.id
-        const planKey   = getPlanFromPriceId(priceId)
-        const planLimit = PLAN_LIMITS[planKey] || 30
+        const userId    = stripeSub.metadata?.supabase_user_id
 
-        await supabase
-          .from('subscriptions')
-          .update({
+        if (!userId) {
+          // Fallback: look up by stripe_subscription_id when metadata is missing
+          const { data: sub } = await supabaseAdmin
+            .from('subscriptions')
+            .select('client_id, plan')
+            .eq('stripe_subscription_id', invoice.subscription)
+            .single()
+          if (!sub) break
+
+          const plan = getPlanLimits(sub.plan)
+          await supabaseAdmin.from('subscriptions').update({
             posts_used:           0,
-            plan:                 planKey,
-            posts_limit:          planLimit,
             status:               'active',
             current_period_start: new Date(stripeSub.current_period_start * 1000).toISOString(),
             current_period_end:   new Date(stripeSub.current_period_end   * 1000).toISOString(),
             updated_at:           new Date().toISOString(),
-          })
-          .eq('stripe_subscription_id', invoice.subscription)
+          }).eq('stripe_subscription_id', invoice.subscription)
 
-        console.log(`Posts reset for subscription ${invoice.subscription}`)
+          console.log(`Posts reset for subscription ${invoice.subscription}`)
+          break
+        }
+
+        const planKey = getPlanByPriceId(stripeSub.items.data[0]?.price.id)
+        const plan    = getPlanLimits(planKey)
+
+        await supabaseAdmin.from('subscriptions').update({
+          posts_used:           0,
+          plan:                 planKey,
+          posts_limit:          plan.posts_limit,
+          status:               'active',
+          current_period_start: new Date(stripeSub.current_period_start * 1000).toISOString(),
+          current_period_end:   new Date(stripeSub.current_period_end   * 1000).toISOString(),
+          updated_at:           new Date().toISOString(),
+        }).eq('client_id', userId)
+
+        console.log(`Posts reset and plan updated for user ${userId}`)
         break
       }
 
-      // ── Payment failed ────────────────────────────────────────────────
+      // ── Payment failed ────────────────────────────────────────
       case 'invoice.payment_failed': {
         const invoice = event.data.object
-        await supabase
-          .from('subscriptions')
-          .update({ status: 'past_due', updated_at: new Date().toISOString() })
-          .eq('stripe_subscription_id', invoice.subscription)
+        await supabaseAdmin.from('subscriptions').update({
+          status:     'past_due',
+          updated_at: new Date().toISOString(),
+        }).eq('stripe_subscription_id', invoice.subscription)
+        console.log(`Payment failed for subscription ${invoice.subscription}`)
         break
       }
 
-      // ── Plan upgraded or downgraded ───────────────────────────────────
+      // ── Subscription cancelled ────────────────────────────────
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object
+        await supabaseAdmin.from('subscriptions').update({
+          status:     'canceled',
+          updated_at: new Date().toISOString(),
+        }).eq('stripe_subscription_id', sub.id)
+        console.log(`Subscription cancelled: ${sub.id}`)
+        break
+      }
+
+      // ── Plan changed (upgrade/downgrade) ─────────────────────
       case 'customer.subscription.updated': {
         const sub     = event.data.object
-        const priceId = sub.items.data[0]?.price.id
-        const planKey = getPlanFromPriceId(priceId)
+        const planKey = getPlanByPriceId(sub.items.data[0]?.price.id)
+        const plan    = getPlanLimits(planKey)
 
-        await supabase
-          .from('subscriptions')
-          .update({
-            plan:        planKey,
-            posts_limit: PLAN_LIMITS[planKey],
-            status:      sub.status,
-            updated_at:  new Date().toISOString(),
-          })
-          .eq('stripe_subscription_id', sub.id)
-
+        await supabaseAdmin.from('subscriptions').update({
+          plan:        planKey,
+          posts_limit: plan.posts_limit,
+          status:      sub.status,
+          updated_at:  new Date().toISOString(),
+        }).eq('stripe_subscription_id', sub.id)
         console.log(`Subscription updated to ${planKey}`)
         break
       }
 
       default:
-        console.log(`Unhandled event: ${event.type}`)
+        console.log(`Unhandled event type: ${event.type}`)
     }
 
     return NextResponse.json({ received: true })
 
   } catch (err) {
     console.error('Webhook handler error:', err)
-    return NextResponse.json({ error: 'Handler failed' }, { status: 500 })
+    return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 })
   }
 }

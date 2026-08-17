@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 // import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { supabase } from '../../lib/supabase' // adjust path relative to app/login/page.jsx
 
@@ -161,6 +162,12 @@ async function handleLogin(e) {
             />
           </div>
 
+          <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'flex-end' }}>
+            <Link href="/forgot-password" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.78rem' }}>
+              Forgot password?
+            </Link>
+          </div>
+
           {error && (
             <div style={{
               background: 'rgba(220,38,38,0.12)',
@@ -210,10 +217,10 @@ async function handleLogin(e) {
         <p style={{
           textAlign: 'center',
           marginTop: 24,
-          color: 'rgba(255,255,255,0.2)',
-          fontSize: '0.75rem',
+          color: 'rgba(255,255,255,0.35)',
+          fontSize: '0.8125rem',
         }}>
-          Contact your administrator to create an account
+          Don't have an account? <Link href="/signup" style={{ color: 'var(--accent-warm)', fontWeight: 500 }}>Sign up</Link>
         </p>
       </div>
     </div>

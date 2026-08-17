@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
-import { PLANS } from '../../lib/stripe'
+import { PLANS } from '../../lib/plans'
 import { Spinner } from '../../components/ui'
 
 const STEPS = [
@@ -82,8 +82,25 @@ export default function OnboardingPage() {
       timezone:     schedule.timezone,
       step:         5,
     })
-    setSaving(false)
-    setStep('billing')
+
+    try {
+      // Billing is disabled for now — mark onboarding complete directly
+      // and skip straight to the dashboard. (Re-enable by swapping this
+      // block back to `setStep('billing')` once real Stripe Price IDs
+      // are configured — see handleCheckout below, left intact.)
+      await fetch('/api/onboarding-complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_name: company.name,
+          timezone:     schedule.timezone,
+        }),
+      })
+      router.push('/dashboard?onboarded=1')
+    } catch (err) {
+      setError('Something went wrong finishing setup. Please try again.')
+      setSaving(false)
+    }
   }
 
   async function handleCheckout(planKey) {
@@ -266,7 +283,7 @@ export default function OnboardingPage() {
                 </select>
               </Field>
               {error && <ErrorMsg>{error}</ErrorMsg>}
-              <PrimaryBtn type="submit" loading={saving}>Continue to pricing →</PrimaryBtn>
+              <PrimaryBtn type="submit" loading={saving}>Finish setup →</PrimaryBtn>
             </form>
           )}
 
