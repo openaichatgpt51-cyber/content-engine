@@ -28,8 +28,6 @@ export default function NewPostPage() {
   const [platforms, setPlatforms] = useState(['LinkedIn', 'Instagram', 'Twitter'])
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState('')
-  const [errorCode, setErrorCode] = useState(null)
-  const [limitInfo, setLimitInfo] = useState(null)
   const [progress,  setProgress]  = useState(0)
 
   function togglePlatform(val) {
@@ -45,8 +43,6 @@ export default function NewPostPage() {
 
     setLoading(true)
     setError('')
-    setErrorCode(null)
-    setLimitInfo(null)
     setProgress(0)
 
     // Animate progress bar while waiting
@@ -65,10 +61,6 @@ export default function NewPostPage() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        if (body.code === 'LIMIT_REACHED') {
-          setErrorCode('LIMIT_REACHED')
-          setLimitInfo({ posts_used: body.posts_used, posts_limit: body.posts_limit })
-        }
         throw new Error(body.error || `Request failed (${res.status})`)
       }
 
@@ -204,30 +196,7 @@ export default function NewPostPage() {
         </Section>
 
         {/* Error */}
-        {error && errorCode === 'LIMIT_REACHED' ? (
-          <div className="animate-in" style={{
-            padding: '18px 20px',
-            background: 'var(--accent-warm-bg, #FEF3C7)',
-            border: '1px solid var(--accent-warm-border, #FDE68A)',
-            borderRadius: 'var(--radius-md)',
-            marginBottom: 20,
-          }}>
-            <div style={{ fontWeight: 600, fontSize: '0.9375rem', color: '#92400E', marginBottom: 4 }}>
-              You've reached your plan's limit
-            </div>
-            <div style={{ fontSize: '0.8125rem', color: '#92400E', marginBottom: 14, lineHeight: 1.5 }}>
-              {limitInfo ? `${limitInfo.posts_used} of ${limitInfo.posts_limit} posts used this month. ` : ''}
-              Upgrade your plan to keep generating, or wait for your next billing cycle.
-            </div>
-            <Link href="/dashboard/settings" style={{
-              display: 'inline-block', padding: '9px 18px', background: '#92400E',
-              color: 'white', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem',
-              fontWeight: 500, textDecoration: 'none',
-            }}>
-              View plans →
-            </Link>
-          </div>
-        ) : error && (
+        {error && (
           <div className="animate-in shake-once" style={{
             padding: '12px 16px',
             background: 'var(--failed-bg)',

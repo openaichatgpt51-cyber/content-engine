@@ -26,20 +26,6 @@ export async function POST(request) {
         completed_at: new Date().toISOString(),
       }, { onConflict: 'client_id' })
 
-    // Provision a default trial subscription row so usage limits are
-    // actually enforceable from day one, even before/without Stripe billing.
-    // ignoreDuplicates so this never overwrites a real paid subscription
-    // that may already exist (e.g. re-running onboarding).
-    await supabaseAdmin
-      .from('subscriptions')
-      .upsert({
-        client_id:   session.user.id,
-        plan:        'trial',
-        status:      'trialing',
-        posts_used:  0,
-        posts_limit: 5,
-      }, { onConflict: 'client_id', ignoreDuplicates: true })
-
     // Send welcome email via Resend
     const RESEND_KEY = process.env.RESEND_API_KEY
     if (RESEND_KEY) {

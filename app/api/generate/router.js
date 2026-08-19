@@ -14,32 +14,29 @@ export async function POST(request) {
     const userId = session.user.id
 
     // ── Check usage limit before generating ───────────────────
-    const { data: subRow } = await supabaseAdmin
+    const { data: sub } = await supabaseAdmin
       .from('subscriptions')
       .select('posts_used, posts_limit, status, plan')
       .eq('client_id', userId)
-      .maybeSingle()
+      .single()
 
-    // Onboarding now provisions a trial subscriptions row for every user,
-    // so this fallback should rarely fire — kept as defense-in-depth for
-    // any account that existed before that fix. Same defaults as
-    // GET /api/usage so the two stay consistent.
-    const sub = subRow || { posts_used: 0, posts_limit: 5, status: 'trialing', plan: 'trial' }
+    // Allow if no subscription yet (treat as trial with limit 5)
+    if (sub) {
+      if (sub.status === 'canceled') {
+        return NextResponse.json({
+          error: 'Your subscription has been cancelled. Please resubscribe to continue.',
+          code:  'SUBSCRIPTION_CANCELED',
+        }, { status: 403 })
+      }
 
-    if (sub.status === 'canceled') {
-      return NextResponse.json({
-        error: 'Your subscription has been cancelled. Please resubscribe to continue.',
-        code:  'SUBSCRIPTION_CANCELED',
-      }, { status: 403 })
-    }
-
-    if (sub.posts_used >= sub.posts_limit) {
-      return NextResponse.json({
-        error: `You've used all ${sub.posts_limit} posts for this month. Upgrade your plan or wait for your next billing cycle.`,
-        code:  'LIMIT_REACHED',
-        posts_used:  sub.posts_used,
-        posts_limit: sub.posts_limit,
-      }, { status: 429 })
+      if (sub.posts_used >= sub.posts_limit) {
+        return NextResponse.json({
+          error: `You've used all ${sub.posts_limit} posts for this month. Upgrade your plan or wait for your next billing cycle.`,
+          code:  'LIMIT_REACHED',
+          posts_used:  sub.posts_used,
+          posts_limit: sub.posts_limit,
+        }, { status: 429 })
+      }
     }
 
     // ── Call n8n webhook ───────────────────────────────────────
@@ -78,11 +75,7 @@ export async function POST(request) {
     }
 
     // ── Increment usage counter on success ─────────────────────
-    // subRow (not the fallback `sub`) — only increment a real row.
-    // A legacy account with no row yet (pre-dating the onboarding fix)
-    // will keep passing the check above until it's backfilled with a
-    // real subscriptions row — flagged here rather than silently masked.
-    if (subRow) {
+    if (sub) {
       await supabaseAdmin.rpc('increment_post_count', { p_client_id: userId })
     }
 
