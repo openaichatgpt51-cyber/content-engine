@@ -157,6 +157,9 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
   const [rejectReason, setRejectReason] = useState('')
   const [toast,        setToast]        = useState(null)
   const [leaving,       setLeaving]     = useState(false)
+  const [imgPanelOpen,  setImgPanelOpen] = useState(false)
+  const [imgBusy,       setImgBusy]      = useState(false)
+  const fileInputRef = useRef(null)
 
   const cfg         = TABS.find(t => t.key === tab)
   const currentText = localPost[cfg.field] || ''
@@ -233,6 +236,10 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
   }
 
   // ── EDIT + SAVE ───────────────────────────────────────────────────────────
+  // Save writes content back to Supabase WITHOUT touching posting_status —
+  // the post stays in the queue, still awaiting a real Approve/Reject
+  // decision. Approve (above) doesn't touch content at all, so it always
+  // publishes whatever was most recently saved here.
   function startEdit() {
     setDraftText(currentText)
     setEditing(true)
@@ -246,28 +253,21 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
   async function saveEdit() {
     if (draftText === currentText) { cancelEdit(); return }
     setSaving(true)
-    const changes = {
-      [cfg.field]:    draftText,
-      posting_status: postingPaused ? 'HALTED' : 'PENDING',    // save + approve in one step
-    }
+    const changes = { [cfg.field]: draftText }
     const { error } = await supabase
       .from('posts')
       .update(changes)
       .eq('id', localPost.id)
 
+    setSaving(false)
     if (error) {
       showMsg('Failed to save — ' + error.message, 'error')
-      setSaving(false)
       return
     }
-    const updated = { ...localPost, ...changes }
-    setLocalPost(updated)
+    setLocalPost(p => ({ ...p, ...changes }))
     onUpdate(changes)
     setEditing(false)
-    showMsg(postingPaused ? 'Saved — held until you resume posting' : 'Saved and approved')
-    setLeaving(true)
-    setTimeout(() => onRemove(), 1200)
-    setSaving(false)
+    showMsg('Changes saved')
   }
 
   // ── RESCHEDULE ────────────────────────────────────────────────────────────
@@ -285,9 +285,57 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
   }
 
   // ── IMAGE UPDATE ──────────────────────────────────────────────────────────
-  function handleImageUpdated(changes) {
+  // Persists the new image URL the same way saveEdit persists text — content
+  // only, posting_status untouched, post stays in the queue for review.
+  async function saveImageUrl(newUrl) {
+    setImgBusy(true)
+    const changes = { image_1_url: newUrl, image_1_view_url: newUrl }
+    const { error } = await supabase.from('posts').update(changes).eq('id', localPost.id)
+    setImgBusy(false)
+    if (error) {
+      showMsg('Failed to update image — ' + error.message, 'error')
+      return
+    }
     setLocalPost(p => ({ ...p, ...changes }))
     onUpdate(changes)
+    setImgPanelOpen(false)
+    showMsg('Image updated')
+  }
+
+  async function regenerateImage() {
+    setImgBusy(true)
+    try {
+      const res = await fetch('/api/regenerate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: localPost.topic }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Regeneration failed')
+      await saveImageUrl(body.imageUrl)
+    } catch (err) {
+      setImgBusy(false)
+      showMsg(err.message, 'error')
+    }
+  }
+
+  async function uploadImage(file) {
+    if (!file) return
+    setImgBusy(true)
+    try {
+      const ext  = file.name.split('.').pop()
+      const path = `${localPost.client_id}/${localPost.id}-${Date.now()}.${ext}`
+      const { error: uploadErr } = await supabase.storage
+        .from('post-images')
+        .upload(path, file, { upsert: true })
+      if (uploadErr) throw uploadErr
+
+      const { data: pub } = supabase.storage.from('post-images').getPublicUrl(path)
+      await saveImageUrl(pub.publicUrl)
+    } catch (err) {
+      setImgBusy(false)
+      showMsg('Upload failed — ' + err.message, 'error')
+    }
   }
 
   return (
@@ -357,14 +405,71 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
           {/* LEFT — image + editor */}
           <div style={{ padding: '20px 20px 20px 24px', borderRight: '1px solid var(--fog-60)' }}>
             {/* Image display */}
-            <div style={{ marginBottom: 16, border: (localPost.image_1_url || localPost.image_1_view_url) ? '1px solid var(--fog-60)' : 'none', borderRadius: 'var(--radius)' }}>
-              <FadeImage
-                src={localPost.image_1_url || localPost.image_1_view_url}
-                alt="Post image"
-                height={180}
-                radius="var(--radius)"
-              />
-            </div>
+            {localPost.is_carousel && localPost.carousel_slides?.length ? (
+              <CarouselStrip slides={localPost.carousel_slides} />
+            ) : (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ position: 'relative', border: (localPost.image_1_url || localPost.image_1_view_url) ? '1px solid var(--fog-60)' : 'none', borderRadius: 'var(--radius)' }}>
+                  <FadeImage
+                    src={localPost.image_1_url || localPost.image_1_view_url}
+                    alt="Post image"
+                    height={180}
+                    radius="var(--radius)"
+                  />
+                  <button
+                    onClick={() => setImgPanelOpen(o => !o)}
+                    disabled={imgBusy}
+                    style={{
+                      position: 'absolute', top: 8, right: 8,
+                      padding: '5px 10px', fontSize: '0.75rem', fontWeight: 500,
+                      background: 'rgba(0,0,0,0.65)', color: 'white',
+                      border: 'none', borderRadius: 'var(--radius-sm)',
+                      cursor: imgBusy ? 'default' : 'pointer',
+                    }}
+                  >
+                    {imgBusy ? 'Working…' : 'Change image'}
+                  </button>
+                </div>
+
+                {imgPanelOpen && (
+                  <div className="animate-in" style={{
+                    marginTop: 8, padding: 12, background: 'var(--fog)',
+                    border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)',
+                    display: 'flex', gap: 8,
+                  }}>
+                    <button
+                      onClick={regenerateImage}
+                      disabled={imgBusy}
+                      style={{
+                        flex: 1, padding: '8px 0', fontSize: '0.8125rem', fontWeight: 500,
+                        background: 'var(--white)', border: '1px solid var(--fog-60)',
+                        borderRadius: 'var(--radius-sm)', cursor: imgBusy ? 'default' : 'pointer',
+                      }}
+                    >
+                      🔄 Regenerate
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={imgBusy}
+                      style={{
+                        flex: 1, padding: '8px 0', fontSize: '0.8125rem', fontWeight: 500,
+                        background: 'var(--white)', border: '1px solid var(--fog-60)',
+                        borderRadius: 'var(--radius-sm)', cursor: imgBusy ? 'default' : 'pointer',
+                      }}
+                    >
+                      📤 Upload
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={e => uploadImage(e.target.files?.[0])}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Platform tabs */}
             <div style={{ display: 'flex', borderBottom: '1px solid var(--fog-60)', marginBottom: 14 }}>
@@ -598,6 +703,58 @@ const btn = {
 }
 
 // ── Platform Preview Helpers ────────────────────────────────────────────────
+function CarouselStrip({ slides }) {
+  const [active, setActive] = useState(0)
+  const sorted = [...slides].sort((a, b) => a.slide_number - b.slide_number)
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{
+        display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4,
+        scrollSnapType: 'x mandatory',
+      }}>
+        {sorted.map((slide, i) => (
+          <div
+            key={slide.slide_number}
+            onClick={() => setActive(i)}
+            style={{
+              flexShrink: 0, width: 130, scrollSnapAlign: 'start', cursor: 'pointer',
+              border: active === i ? '2px solid var(--ink)' : '1px solid var(--fog-60)',
+              borderRadius: 'var(--radius-sm)', overflow: 'hidden',
+              opacity: active === i ? 1 : 0.6, transition: 'opacity 0.15s ease',
+            }}
+          >
+            <FadeImage src={slide.image_url} alt={`Slide ${slide.slide_number}`} aspectRatio="1/1" radius={0} retryable={false} />
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+        <span style={{ fontSize: '0.75rem', color: 'var(--ink-20)' }}>
+          Slide {active + 1} of {sorted.length}
+        </span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => setActive(a => Math.max(0, a - 1))} disabled={active === 0} style={navBtnStyle(active === 0)}>←</button>
+          <button onClick={() => setActive(a => Math.min(sorted.length - 1, a + 1))} disabled={active === sorted.length - 1} style={navBtnStyle(active === sorted.length - 1)}>→</button>
+        </div>
+      </div>
+
+      <p style={{ fontSize: '0.8125rem', color: 'var(--ink-40)', marginTop: 8, lineHeight: 1.5 }}>
+        {sorted[active]?.text}
+      </p>
+    </div>
+  )
+}
+
+function navBtnStyle(disabled) {
+  return {
+    width: 26, height: 26, borderRadius: 'var(--radius-sm)',
+    border: '1px solid var(--fog-60)', background: 'var(--white)',
+    color: disabled ? 'var(--fog-60)' : 'var(--ink)',
+    cursor: disabled ? 'default' : 'pointer', fontSize: '0.8rem',
+  }
+}
+
 function LinkedInPreview({ text, imageUrl }) {
   return (
     <div style={{ border: '1px solid var(--fog-60)', borderRadius: 8, padding: 16, background: '#fff' }}>

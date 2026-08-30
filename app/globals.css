@@ -150,20 +150,36 @@ input, textarea, select {
 }
 
 /* ── Entrance utilities ────────────────────────────────────────────────── */
-.animate-in { animation: fadeIn 0.35s var(--ease-out) forwards; }
-.slide-in   { animation: slideIn 0.3s var(--ease-out) forwards; }
-.slide-in-right { animation: slideInRight 0.32s var(--ease-out) forwards; }
-.scale-in   { animation: scaleIn 0.22s var(--ease-spring) forwards; }
-.pop-in     { animation: popIn 0.4s var(--ease-spring) forwards; }
+.animate-in { animation: fadeIn 0.55s var(--ease-out) forwards; }
+.slide-in   { animation: slideIn 0.48s var(--ease-out) forwards; }
+.slide-in-right { animation: slideInRight 0.5s var(--ease-out) forwards; }
+.scale-in   { animation: scaleIn 0.35s var(--ease-spring) forwards; }
+.pop-in     { animation: popIn 0.65s var(--ease-spring) forwards; }
 .shake-once { animation: shake 0.4s var(--ease-in-out); }
 
-/* Staggered list entrance — apply .stagger-item with an inline --i index.
-   Cards visibly drop down and settle with a small spring overshoot, one
-   after another — not a same-instant fade. */
+/* Staggered list/grid entrance — apply .stagger-item with an inline --i
+   index. Cards visibly drop down and settle with a small spring overshoot,
+   one after another — not a same-instant fade. This is "tier 2" of a
+   three-tier reveal: skeleton (fast, .animate-in) -> structure
+   (.stagger-item, this) -> content nested inside that structure
+   (.stagger-chip, below) — each tier slower than the last, so a page
+   visibly builds up in layers instead of all appearing at once. */
 .stagger-item {
   opacity: 0;
-  animation: dropIn 0.65s var(--ease-spring) forwards;
-  animation-delay: calc(var(--i, 0) * 110ms);
+  animation: dropIn 1.0s var(--ease-spring) forwards;
+  animation-delay: calc(var(--i, 0) * 150ms);
+}
+
+/* Tier 3 — content nested inside a .stagger-item (e.g. calendar post chips
+   inside day cells). Inherits --i from its .stagger-item ancestor via CSS
+   custom property cascade automatically; set --ci (its own index within
+   that parent) inline per element. The +900ms base offset is deliberate —
+   it lets tier 2's structure animation substantially finish before tier 3
+   content starts appearing inside it, rather than both racing at once. */
+.stagger-chip {
+  opacity: 0;
+  animation: dropIn 1.3s var(--ease-spring) forwards;
+  animation-delay: calc(var(--i, 0) * 150ms + var(--ci, 0) * 90ms + 900ms);
 }
 
 /* ── Interactive feedback ──────────────────────────────────────────────── */

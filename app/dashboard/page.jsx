@@ -441,13 +441,14 @@ export default function DashboardPage() {
                       return (
                         <div
                           key={post.id || i}
-                          className="cal-chip"
+                          className="cal-chip stagger-chip"
                           title={locked ? `${post.topic} — already ${cfg.label.toLowerCase()}, can't be rescheduled` : `${post.topic} (drag to reschedule)`}
                           draggable={!locked}
                           onDragStart={e => { e.stopPropagation(); handleDragStart(e, post) }}
                           onDragEnd={handleDragEnd}
                           onClick={e => { e.stopPropagation(); setSelected(post) }}
                           style={{
+                            '--ci': i,
                             background: cfg.bg,
                             border: `1px solid ${cfg.border}`,
                             borderLeft: `3px solid ${cfg.color}`,

@@ -8,7 +8,7 @@ export async function POST(request) {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    const { topic, tone, platforms, brand_voice, is_carousel, slide_count } = await request.json()
+    const { topic, tone, platforms, brand_voice } = await request.json()
     if (!topic?.trim()) return NextResponse.json({ error: 'Topic is required' }, { status: 400 })
 
     const userId = session.user.id
@@ -59,8 +59,6 @@ export async function POST(request) {
         platforms:    Array.isArray(platforms) ? platforms.join(',') : (platforms || 'LinkedIn,Instagram,Twitter'),
         tone:         tone || 'Professional',
         brand_voice:  brand_voice || '',
-        is_carousel:  !!is_carousel,
-        slide_count:  is_carousel ? Math.max(2, Math.min(10, Number(slide_count) || 5)) : null,
         client_id:    userId,
         client_email: session.user.email,
       }),

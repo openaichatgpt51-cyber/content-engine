@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { Spinner, Skeleton } from '../../../components/ui'
 import KillSwitch from '../../../components/KillSwitch'
@@ -38,7 +39,10 @@ const PLATFORMS = [
 
 const TONES = ['Professional', 'Casual', 'Provocative', 'Educational', 'Inspiring']
 
-export default function SettingsPage() {
+function SettingsFlow() {
+  const searchParams = useSearchParams()
+  const validTabs = ['platforms', 'brandvoice', 'posting', 'schedule', 'privacy']
+  const requestedTab = searchParams.get('tab')
   const [connections, setConnections] = useState({})
   const [brand, setBrand]             = useState({
     company_description: '',
@@ -50,7 +54,74 @@ export default function SettingsPage() {
   const [saving,       setSaving]     = useState(false)
   const [saved,        setSaved]      = useState(false)
   const [loadingConns, setLoadingConns] = useState(true)
-  const [activeTab,    setActiveTab]  = useState('platforms')
+  const [activeTab,    setActiveTab]  = useState(validTabs.includes(requestedTab) ? requestedTab : 'platforms')
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting,          setDeleting]          = useState(false)
+  const [schedule, setSchedule] = useState({ posting_days: [], posting_time: '09:00', timezone: 'Africa/Lagos' })
+  const [scheduleSaving, setScheduleSaving] = useState(false)
+  const [scheduleSaved,  setScheduleSaved]  = useState(false)
+  const [deleteError,       setDeleteError]       = useState('')
+  const [testResults, setTestResults] = useState({})   // { linkedin: 'testing'|'ok'|'failed' }
+
+  async function handleDeleteAccount() {
+    if (deleteConfirmText !== 'DELETE') return
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      const res  = await fetch('/api/account/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: deleteConfirmText }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Deletion failed')
+
+      // The auth user no longer exists at this point — no session to sign
+      // out of. Just send them to a plain confirmation page.
+      window.location.href = '/account-deleted'
+    } catch (err) {
+      setDeleteError(err.message)
+      setDeleting(false)
+    }
+  }
+
+  async function testConnection(platformKey) {
+    setTestResults(r => ({ ...r, [platformKey]: 'testing' }))
+    try {
+      const res  = await fetch('/api/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: platformKey }),
+      })
+      const body = await res.json()
+      setTestResults(r => ({ ...r, [platformKey]: body.ok ? 'ok' : 'failed' }))
+    } catch {
+      setTestResults(r => ({ ...r, [platformKey]: 'failed' }))
+    }
+    setTimeout(() => setTestResults(r => ({ ...r, [platformKey]: null })), 5000)
+  }
+
+  function toggleScheduleDay(day) {
+    setSchedule(s => ({
+      ...s,
+      posting_days: s.posting_days.includes(day) ? s.posting_days.filter(d => d !== day) : [...s.posting_days, day],
+    }))
+  }
+
+  async function saveSchedule() {
+    if (!schedule.posting_days.length) return
+    setScheduleSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('onboarding').upsert({
+      client_id:    user.id,
+      posting_days: schedule.posting_days,
+      posting_time: schedule.posting_time,
+      timezone:     schedule.timezone,
+    }, { onConflict: 'client_id' })
+    setScheduleSaving(false)
+    setScheduleSaved(true)
+    setTimeout(() => setScheduleSaved(false), 2500)
+  }
 
   useEffect(() => { loadData() }, [])
 
@@ -68,6 +139,20 @@ export default function SettingsPage() {
     for (const acc of accounts || []) connMap[acc.platform] = acc
     setConnections(connMap)
     setLoadingConns(false)
+
+    // Load posting schedule (set during onboarding, editable here)
+    const { data: onboarding } = await supabase
+      .from('onboarding')
+      .select('posting_days, posting_time, timezone')
+      .eq('client_id', user.id)
+      .maybeSingle()
+    if (onboarding) {
+      setSchedule({
+        posting_days: onboarding.posting_days || [],
+        posting_time: onboarding.posting_time || '09:00',
+        timezone:     onboarding.timezone || 'Africa/Lagos',
+      })
+    }
 
     // Load brand profile
     const { data: profile } = await supabase
@@ -151,6 +236,8 @@ export default function SettingsPage() {
           { key: 'platforms',  label: 'Platform Connections' },
           { key: 'brandvoice', label: 'Brand Voice' },
           { key: 'posting',    label: 'Posting Control' },
+          { key: 'schedule',   label: 'Posting Schedule' },
+          { key: 'privacy',    label: 'Privacy & Data' },
         ].map(t => (
           <button
             key={t.key}
@@ -279,6 +366,24 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Connect / Reconnect button */}
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                {isConn && !needsReconnect && !p.comingSoon && (
+                  <button
+                    onClick={() => testConnection(p.key)}
+                    disabled={testResults[p.key] === 'testing'}
+                    style={{
+                      padding: '9px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem',
+                      fontWeight: 500, background: 'var(--white)',
+                      color: testResults[p.key] === 'ok' ? '#16A34A' : testResults[p.key] === 'failed' ? 'var(--failed)' : 'var(--ink-40)',
+                      border: '1px solid var(--fog-60)', cursor: testResults[p.key] === 'testing' ? 'default' : 'pointer',
+                    }}
+                  >
+                    {testResults[p.key] === 'testing' ? 'Testing…'
+                      : testResults[p.key] === 'ok' ? '✓ Working'
+                      : testResults[p.key] === 'failed' ? '✕ Failed'
+                      : 'Test Connection'}
+                  </button>
+                )}
                 {p.comingSoon ? (
                   <span style={{
                     padding: '9px 18px',
@@ -313,6 +418,7 @@ export default function SettingsPage() {
                     {needsReconnect ? 'Reconnect' : isConn ? 'Reconnect' : 'Connect'}
                   </a>
                 )}
+                </div>
               </div>
             )
           })}
@@ -463,6 +569,146 @@ export default function SettingsPage() {
           <KillSwitch />
         </div>
       )}
+
+      {/* ── Posting Schedule Tab ─────────────────────────────────────────── */}
+      {activeTab === 'schedule' && (
+        <div className="animate-in" style={{ maxWidth: 560 }}>
+          <div style={{
+            background: 'var(--white)', border: '1px solid var(--fog-60)',
+            borderRadius: 'var(--radius-lg)', padding: 24,
+          }}>
+            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 4 }}>Posting days</h3>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--ink-40)', marginBottom: 14 }}>
+              Approved posts are scheduled to your next available day/time below.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+              {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(day => (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => toggleScheduleDay(day)}
+                  style={{
+                    padding: '8px 16px', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem',
+                    border: `1.5px solid ${schedule.posting_days.includes(day) ? 'var(--ink)' : 'var(--fog-60)'}`,
+                    background: schedule.posting_days.includes(day) ? 'var(--ink)' : 'var(--white)',
+                    color: schedule.posting_days.includes(day) ? 'var(--white)' : 'var(--ink-40)',
+                  }}
+                >
+                  {day.slice(0, 3)}
+                </button>
+              ))}
+            </div>
+
+            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 10 }}>Preferred time</h3>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
+              <input
+                type="time"
+                value={schedule.posting_time}
+                onChange={e => setSchedule(s => ({ ...s, posting_time: e.target.value }))}
+                style={{
+                  padding: '9px 12px', border: '1.5px solid var(--fog-60)',
+                  borderRadius: 'var(--radius-sm)', fontSize: '0.875rem',
+                }}
+              />
+              <select
+                value={schedule.timezone}
+                onChange={e => setSchedule(s => ({ ...s, timezone: e.target.value }))}
+                style={{
+                  padding: '9px 12px', border: '1.5px solid var(--fog-60)',
+                  borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', flex: 1,
+                }}
+              >
+                {['Africa/Lagos','Europe/London','America/New_York','America/Los_Angeles','Asia/Dubai','Asia/Singapore'].map(tz => (
+                  <option key={tz} value={tz}>{tz}</option>
+                ))}
+              </select>
+            </div>
+
+            {!schedule.posting_days.length && (
+              <p style={{ fontSize: '0.8125rem', color: 'var(--failed)', marginBottom: 16 }}>
+                Select at least one day.
+              </p>
+            )}
+
+            <button
+              onClick={saveSchedule}
+              disabled={scheduleSaving || !schedule.posting_days.length}
+              style={{
+                padding: '10px 22px', fontSize: '0.875rem', fontWeight: 500,
+                background: 'var(--ink)', color: 'var(--white)', border: 'none',
+                borderRadius: 'var(--radius-sm)', cursor: scheduleSaving ? 'default' : 'pointer',
+              }}
+            >
+              {scheduleSaving ? 'Saving…' : scheduleSaved ? '✓ Saved' : 'Save schedule'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Privacy & Data Tab ───────────────────────────────────────────── */}
+      {activeTab === 'privacy' && (
+        <div className="animate-in" style={{ maxWidth: 560 }}>
+          <div style={{
+            background: 'var(--white)', border: '1px solid var(--fog-60)',
+            borderRadius: 'var(--radius-lg)', padding: 24, marginBottom: 20,
+          }}>
+            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 6 }}>Your data</h3>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--ink-40)', lineHeight: 1.6 }}>
+              ContentEngine stores your generated posts, connected platform tokens, brand voice
+              settings, and usage history. See our{' '}
+              <a href="/privacy-policy" style={{ color: 'var(--ink)', textDecoration: 'underline' }}>Privacy Policy</a>{' '}
+              for full details on what's collected and how long it's kept.
+            </p>
+          </div>
+
+          <div style={{
+            background: '#FEF2F2', border: '1px solid #FECACA',
+            borderRadius: 'var(--radius-lg)', padding: 24,
+          }}>
+            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#991B1B', marginBottom: 6 }}>
+              Delete my data
+            </h3>
+            <p style={{ fontSize: '0.8125rem', color: '#991B1B', lineHeight: 1.6, marginBottom: 16 }}>
+              This permanently deletes your account, all generated posts, connected platform
+              tokens, brand voice settings, and billing history. <strong>This cannot be undone.</strong>
+            </p>
+
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 500, color: '#991B1B', marginBottom: 6 }}>
+              Type DELETE to confirm
+            </label>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={e => setDeleteConfirmText(e.target.value)}
+              placeholder="DELETE"
+              style={{
+                width: '100%', padding: '9px 12px', marginBottom: 12,
+                border: '1.5px solid #FECACA', borderRadius: 'var(--radius-sm)',
+                fontSize: '0.875rem', outline: 'none',
+              }}
+            />
+
+            {deleteError && (
+              <div style={{ fontSize: '0.8125rem', color: '#991B1B', marginBottom: 12 }}>
+                {deleteError}
+              </div>
+            )}
+
+            <button
+              onClick={handleDeleteAccount}
+              disabled={deleteConfirmText !== 'DELETE' || deleting}
+              style={{
+                padding: '10px 20px', fontSize: '0.8125rem', fontWeight: 600,
+                background: deleteConfirmText === 'DELETE' ? '#DC2626' : '#FCA5A5',
+                color: 'white', border: 'none', borderRadius: 'var(--radius-sm)',
+                cursor: deleteConfirmText === 'DELETE' && !deleting ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {deleting ? 'Deleting…' : 'Permanently delete my account'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -500,4 +746,16 @@ const textareaStyle = {
   lineHeight: 1.6,
   transition: 'border-color 0.15s, box-shadow 0.15s',
   fontFamily: 'var(--font-body)',
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Spinner />
+      </div>
+    }>
+      <SettingsFlow />
+    </Suspense>
+  )
 }

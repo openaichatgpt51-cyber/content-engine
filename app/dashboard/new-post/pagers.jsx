@@ -1,9 +1,8 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Spinner } from '../../../components/ui'
-import { supabase } from '../../../lib/supabase'
 
 const TONES = [
   { value: 'professional', label: 'Professional', desc: 'Formal, authoritative, data-driven' },
@@ -30,36 +29,6 @@ export default function NewPostPage() {
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState('')
   const [progress,  setProgress]  = useState(0)
-  const [brandVoice, setBrandVoice] = useState('')
-  const [isCarousel, setIsCarousel] = useState(false)
-  const [slideCount, setSlideCount] = useState(5)
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: profile } = await supabase
-        .from('brand_profiles')
-        .select('company_description, target_audience, topics_to_avoid, example_posts')
-        .eq('client_id', user.id)
-        .maybeSingle()
-      if (cancelled || !profile) return
-
-      // Compose everything Settings collects into the single brand_voice
-      // string the n8n prompts already know how to use — this was the
-      // only missing link; the rest of the pipeline was already wired.
-      const parts = []
-      if (profile.company_description) parts.push(`Company: ${profile.company_description}`)
-      if (profile.target_audience)      parts.push(`Audience: ${profile.target_audience}`)
-      if (profile.topics_to_avoid)      parts.push(`Avoid discussing: ${profile.topics_to_avoid}`)
-      if (profile.example_posts?.filter(Boolean).length) {
-        parts.push(`Match the style of these examples:\n${profile.example_posts.filter(Boolean).join('\n---\n')}`)
-      }
-      setBrandVoice(parts.join('\n\n'))
-    })()
-    return () => { cancelled = true }
-  }, [])
 
   function togglePlatform(val) {
     setPlatforms(prev =>
@@ -85,10 +54,7 @@ export default function NewPostPage() {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: topic.trim(), tone, platforms, brand_voice: brandVoice,
-          is_carousel: isCarousel, slide_count: isCarousel ? slideCount : null,
-        }),
+        body: JSON.stringify({ topic: topic.trim(), tone, platforms }),
       })
 
       clearInterval(interval)
@@ -229,45 +195,7 @@ export default function NewPostPage() {
           </div>
         </Section>
 
-        <Section label="Format" step="04" index={3}>
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '14px 16px', border: '1.5px solid var(--fog-60)',
-            borderRadius: 'var(--radius-md)', cursor: 'pointer',
-            background: isCarousel ? 'var(--fog)' : 'var(--white)',
-          }}>
-            <input
-              type="checkbox"
-              checked={isCarousel}
-              onChange={e => setIsCarousel(e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: 'var(--ink)' }}
-            />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 500, fontSize: '0.9375rem' }}>Generate as carousel</div>
-              <div style={{ fontSize: '0.8125rem', color: 'var(--ink-40)' }}>
-                Multiple slides with AI-generated text over images, instead of a single post
-              </div>
-            </div>
-          </label>
-
-          {isCarousel && (
-            <div className="animate-in" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <label style={{ fontSize: '0.875rem', color: 'var(--ink-40)' }}>Number of slides</label>
-              <input
-                type="number"
-                min={2}
-                max={10}
-                value={slideCount}
-                onChange={e => setSlideCount(Math.max(2, Math.min(10, Number(e.target.value) || 2)))}
-                style={{
-                  width: 70, padding: '8px 10px', border: '1.5px solid var(--fog-60)',
-                  borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', textAlign: 'center',
-                }}
-              />
-              <span style={{ fontSize: '0.78rem', color: 'var(--ink-20)' }}>(2–10)</span>
-            </div>
-          )}
-        </Section>
+        {/* Error */}
         {error && (
           <div className="animate-in shake-once" style={{
             padding: '12px 16px',
