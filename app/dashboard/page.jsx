@@ -310,6 +310,18 @@ export default function DashboardPage() {
             {monthLabel}
           </span>
           <button className="press hover-lift" onClick={nextMonth} style={{ ...navBtn }}>→</button>
+          {(viewYear !== today.getFullYear() || viewMonth !== today.getMonth()) && (
+            <button
+              className="press hover-lift"
+              onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()) }}
+              style={{
+                ...navBtn, width: 'auto', padding: '0 12px', fontSize: '0.8125rem',
+                fontWeight: 500, color: 'var(--ink)', border: '1px solid var(--fog-60)',
+              }}
+            >
+              Today
+            </button>
+          )}
         </div>
       </div>
 

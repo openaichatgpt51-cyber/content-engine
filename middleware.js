@@ -55,7 +55,9 @@ export async function middleware(req) {
   // Skipped for /onboarding itself (avoid a redirect loop) and for /api/*
   // (OAuth callbacks, onboarding-complete, and stripe checkout all need to
   // keep working *during* onboarding — gating them would break the wizard).
-  if (!pathname.startsWith('/onboarding') && !pathname.startsWith('/api/')) {
+  // Also skipped for /admin — admins aren't regular clients and shouldn't
+  // be forced through client onboarding to reach the admin panel.
+  if (!pathname.startsWith('/onboarding') && !pathname.startsWith('/api/') && !pathname.startsWith('/admin')) {
     // Cache a positive result in a cookie so fully-onboarded users don't
     // pay a DB round trip on every single navigation. Only ever cached
     // once `completed` is confirmed true — an incomplete user is checked
@@ -72,6 +74,23 @@ export async function middleware(req) {
       }
 
       res.cookies.set('oc', '1', { maxAge: 60 * 60 * 24 * 30, path: '/' })
+    }
+  }
+
+  // ── Admin gate ──────────────────────────────────────────────────────
+  // Checked fresh every request, deliberately not cached like the
+  // onboarding flag above — admin access is sensitive enough that a stale
+  // cookie granting access after someone's is_admin is revoked isn't
+  // acceptable, unlike onboarding status where staleness is harmless.
+  if (pathname.startsWith('/admin')) {
+    const { data: client } = await supabase
+      .from('clients')
+      .select('is_admin')
+      .eq('id', session.user.id)
+      .maybeSingle()
+
+    if (!client?.is_admin) {
+      return NextResponse.redirect(new URL('/dashboard', req.url))
     }
   }
 

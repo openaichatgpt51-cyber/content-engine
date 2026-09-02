@@ -6,33 +6,40 @@ import { Spinner } from '../../../components/ui'
 import { supabase } from '../../../lib/supabase'
 
 const TONES = [
-  { value: 'professional', label: 'Professional', desc: 'Formal, authoritative, data-driven' },
-  { value: 'casual',       label: 'Casual',       desc: 'Conversational, approachable, warm' },
-  { value: 'provocative',  label: 'Provocative',  desc: 'Bold, contrarian, thought-provoking' },
+  { value: 'professional', label: 'Professional' },
+  { value: 'casual',       label: 'Casual' },
+  { value: 'provocative',  label: 'Provocative' },
 ]
 
-// NOTE: values must match exactly what the n8n workflow's Filter nodes check for
-// (Filter Ready Posts / Filter Ready Instagram / Filter Ready Twitter all do a
-// case-sensitive "contains" match against "LinkedIn" / "Instagram" / "Twitter").
-// Lowercase values here would silently pass the case-sensitive filter and every
-// generated post would sit in PENDING forever without ever being picked up for posting.
-const PLATFORM_OPTIONS = [
-  { value: 'LinkedIn',  label: 'LinkedIn',  icon: '🔵', desc: '1,200 char post' },
-  { value: 'Instagram', label: 'Instagram', icon: '🟣', desc: '2,200 char caption' },
-  { value: 'Twitter',   label: 'X / Twitter', icon: '⬛', desc: '280 char hook' },
+// NOTE: values must match exactly what the n8n workflow's Filter nodes check
+// for (case-sensitive "contains" against "LinkedIn" / "Instagram" / "Twitter").
+const PLATFORMS = [
+  { key: 'LinkedIn',  label: 'LinkedIn',    icon: '🔵', limit: '1,200 char post' },
+  { key: 'Instagram', label: 'Instagram',   icon: '🟣', limit: '2,200 char caption' },
+  { key: 'Twitter',   label: 'X / Twitter', icon: '⬛', limit: '280 char hook' },
 ]
+
+const emptyContent = () => ({
+  topic: '', tone: 'professional', format: 'single', slideCount: 5,
+})
 
 export default function NewPostPage() {
   const router = useRouter()
-  const [topic,     setTopic]     = useState('')
-  const [tone,      setTone]      = useState('professional')
-  const [platforms, setPlatforms] = useState(['LinkedIn', 'Instagram', 'Twitter'])
-  const [loading,   setLoading]   = useState(false)
-  const [error,     setError]     = useState('')
-  const [progress,  setProgress]  = useState(0)
-  const [brandVoice, setBrandVoice] = useState('')
-  const [isCarousel, setIsCarousel] = useState(false)
-  const [slideCount, setSlideCount] = useState(5)
+  const [enabled, setEnabled] = useState({ LinkedIn: true, Instagram: true, Twitter: true })
+  // Instagram/Twitter default to copying LinkedIn — the common case (same
+  // content everywhere) needs zero extra input; unchecking reveals that
+  // platform's own fields for full customization.
+  const [copyFrom, setCopyFrom] = useState({ Instagram: 'LinkedIn', Twitter: 'LinkedIn' })
+  const [content, setContent] = useState({
+    LinkedIn: emptyContent(), Instagram: emptyContent(), Twitter: emptyContent(),
+  })
+
+  const [brandVoice, setBrandVoice]   = useState('')
+  const [loading,     setLoading]     = useState(false)
+  const [error,       setError]       = useState('')
+  const [errorCode,   setErrorCode]   = useState(null)
+  const [limitInfo,   setLimitInfo]   = useState(null)
+  const [progress,    setProgress]    = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -45,10 +52,6 @@ export default function NewPostPage() {
         .eq('client_id', user.id)
         .maybeSingle()
       if (cancelled || !profile) return
-
-      // Compose everything Settings collects into the single brand_voice
-      // string the n8n prompts already know how to use — this was the
-      // only missing link; the rest of the pipeline was already wired.
       const parts = []
       if (profile.company_description) parts.push(`Company: ${profile.company_description}`)
       if (profile.target_audience)      parts.push(`Audience: ${profile.target_audience}`)
@@ -61,327 +64,253 @@ export default function NewPostPage() {
     return () => { cancelled = true }
   }, [])
 
-  function togglePlatform(val) {
-    setPlatforms(prev =>
-      prev.includes(val) ? prev.filter(p => p !== val) : [...prev, val]
-    )
+  function togglePlatform(key) {
+    setEnabled(e => ({ ...e, [key]: !e[key] }))
+  }
+
+  function toggleCopyFrom(key) {
+    setCopyFrom(c => ({ ...c, [key]: c[key] ? null : 'LinkedIn' }))
+  }
+
+  function updateContent(key, field, value) {
+    setContent(c => ({ ...c, [key]: { ...c[key], [field]: value } }))
+  }
+
+  // The values actually used for a platform — its own, or LinkedIn's if
+  // it's set to copy.
+  function effective(key) {
+    const source = copyFrom[key] || key
+    return content[source]
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!topic.trim())       return setError('Please enter a topic')
-    if (!platforms.length)   return setError('Select at least one platform')
+    const activePlatforms = PLATFORMS.filter(p => enabled[p.key]).map(p => p.key)
+    if (!activePlatforms.length) return setError('Select at least one platform')
+    for (const key of activePlatforms) {
+      if (!effective(key).topic.trim()) {
+        return setError(`Add a topic for ${key}${copyFrom[key] ? ' (or check "Same as LinkedIn")' : ''}`)
+      }
+    }
 
     setLoading(true)
     setError('')
+    setErrorCode(null)
+    setLimitInfo(null)
     setProgress(0)
 
-    // Animate progress bar while waiting
     const interval = setInterval(() => {
       setProgress(p => p < 88 ? p + Math.random() * 4 : p)
-    }, 1200)
+    }, 400)
 
     try {
+      // Per-platform content payload — each platform carries its own topic,
+      // tone, and format (single/carousel/video), not one shared topic.
+      const perPlatform = {}
+      for (const key of activePlatforms) {
+        const c = effective(key)
+        perPlatform[key] = {
+          topic:       c.topic.trim(),
+          tone:        c.tone,
+          is_carousel: c.format === 'carousel',
+          slide_count: c.format === 'carousel' ? c.slideCount : null,
+          is_video:    c.format === 'video',
+        }
+      }
+
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          topic: topic.trim(), tone, platforms, brand_voice: brandVoice,
-          is_carousel: isCarousel, slide_count: isCarousel ? slideCount : null,
+          platforms:    activePlatforms,
+          content:      perPlatform,
+          brand_voice:  brandVoice,
         }),
       })
 
-      clearInterval(interval)
-
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
+        if (body.code === 'LIMIT_REACHED') {
+          setErrorCode('LIMIT_REACHED')
+          setLimitInfo({ posts_used: body.posts_used, posts_limit: body.posts_limit })
+        }
         throw new Error(body.error || `Request failed (${res.status})`)
       }
 
       setProgress(100)
-      await new Promise(r => setTimeout(r, 600)) // let user see 100%
-      router.push('/dashboard/review')
-
+      setTimeout(() => router.push('/dashboard/review'), 400)
     } catch (err) {
+      setError(err.message)
+    } finally {
       clearInterval(interval)
-      setError(err.message || 'Something went wrong. Please try again.')
       setLoading(false)
-      setProgress(0)
     }
   }
 
   return (
-    <div style={{ padding: '32px 36px', flex: 1, maxWidth: 720 }}>
-
-      {/* Header */}
-      <div style={{ marginBottom: 36 }}>
-        <Link href="/dashboard" className="press" style={{ fontSize: '0.8rem', color: 'var(--ink-20)', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16, width: 'fit-content' }}>
-          ← Back to Calendar
-        </Link>
-        <h1 className="animate-in" style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '2rem',
-          fontWeight: 400,
-          letterSpacing: '-0.02em',
-          color: 'var(--ink)',
-          lineHeight: 1.1,
-        }}>
-          Generate New Post
-        </h1>
-        <p style={{ color: 'var(--ink-20)', fontSize: '0.875rem', marginTop: 6 }}>
-          Enter a topic and we'll research, write, and schedule content for each platform.
-        </p>
-      </div>
+    <div style={{ padding: '32px 40px', maxWidth: 720 }}>
+      <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: 4 }}>New Post</h1>
+      <p style={{ color: 'var(--ink-20)', fontSize: '0.875rem', marginBottom: 28 }}>
+        Each platform can have its own topic, tone, and format — or just copy LinkedIn.
+      </p>
 
       <form onSubmit={handleSubmit}>
+        {PLATFORMS.map((p, idx) => {
+          const isSource = p.key === 'LinkedIn'
+          const isCopying = !isSource && !!copyFrom[p.key]
+          const c = content[p.key]
 
-        {/* Topic input */}
-        <Section label="What's the topic?" step="01" index={0}>
-          <textarea
-            value={topic}
-            onChange={e => setTopic(e.target.value)}
-            placeholder="e.g. How AI is reshaping enterprise cybersecurity in 2026"
-            rows={3}
-            required
-            style={{
-              width: '100%',
-              padding: '14px 16px',
+          return (
+            <div key={p.key} className="stagger-item" style={{
+              '--i': idx,
+              marginBottom: 16,
+              border: `1.5px solid ${enabled[p.key] ? 'var(--fog-60)' : 'var(--fog-60)'}`,
+              borderRadius: 'var(--radius-lg)',
+              opacity: enabled[p.key] ? 1 : 0.5,
               background: 'var(--white)',
-              border: '1.5px solid var(--fog-60)',
-              borderRadius: 'var(--radius)',
-              fontSize: '0.9375rem',
-              color: 'var(--ink)',
-              resize: 'vertical',
-              outline: 'none',
-              transition: 'border-color 0.15s, box-shadow 0.15s',
-              lineHeight: 1.6,
-            }}
-            onFocus={e  => { e.target.style.borderColor = 'var(--ink-40)'; e.target.style.boxShadow = '0 0 0 3px rgba(0,0,0,0.04)' }}
-            onBlur={e   => { e.target.style.borderColor = 'var(--fog-60)'; e.target.style.boxShadow = 'none' }}
-          />
-          <div style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 6 }}>
-            Be specific — include an angle, year, or target audience for best results.
-          </div>
-        </Section>
+              overflow: 'hidden',
+            }}>
+              {/* Platform header */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px',
+                borderBottom: enabled[p.key] ? '1px solid var(--fog-60)' : 'none',
+              }}>
+                <input
+                  type="checkbox"
+                  checked={enabled[p.key]}
+                  onChange={() => togglePlatform(p.key)}
+                  style={{ width: 18, height: 18, accentColor: 'var(--ink)' }}
+                />
+                <span>{p.icon}</span>
+                <span style={{ fontWeight: 600, fontSize: '0.9375rem' }}>{p.label}</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginLeft: 4 }}>{p.limit}</span>
 
-        {/* Tone selector */}
-        <Section label="Tone of voice" step="02" index={1}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-            {TONES.map(t => (
-              <button
-                key={t.value}
-                type="button"
-                className="press hover-lift"
-                onClick={() => setTone(t.value)}
-                style={{
-                  padding: '14px 16px',
-                  textAlign: 'left',
-                  background: tone === t.value ? 'var(--ink)' : 'var(--white)',
-                  color: tone === t.value ? 'var(--white)' : 'var(--ink)',
-                  border: `1.5px solid ${tone === t.value ? 'var(--ink)' : 'var(--fog-60)'}`,
-                  borderRadius: 'var(--radius)',
-                  cursor: 'pointer',
-                  transition: 'background 0.15s ease, color 0.15s ease, border-color 0.15s ease',
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: 3 }}>{t.label}</div>
-                <div style={{ fontSize: '0.75rem', opacity: 0.6, lineHeight: 1.4 }}>{t.desc}</div>
-              </button>
-            ))}
-          </div>
-        </Section>
-
-        {/* Platform checkboxes */}
-        <Section label="Publish to" step="03" index={2}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {PLATFORM_OPTIONS.map(p => {
-              const checked = platforms.includes(p.value)
-              return (
-                <label
-                  key={p.value}
-                  className="hover-lift"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 14,
-                    padding: '14px 16px',
-                    background: checked ? 'var(--fog)' : 'var(--white)',
-                    border: `1.5px solid ${checked ? 'var(--ink-60)' : 'var(--fog-60)'}`,
-                    borderRadius: 'var(--radius)',
-                    cursor: 'pointer',
-                    transition: 'background 0.15s ease, border-color 0.15s ease',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => togglePlatform(p.value)}
-                    style={{ width: 16, height: 16, accentColor: 'var(--ink)', cursor: 'pointer' }}
-                  />
-                  <span className="tap-scale" style={{ fontSize: '1.2rem', display: 'inline-block' }}>{p.icon}</span>
-                  <div>
-                    <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{p.label}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--ink-20)' }}>{p.desc}</div>
-                  </div>
-                </label>
-              )
-            })}
-          </div>
-        </Section>
-
-        <Section label="Format" step="04" index={3}>
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '14px 16px', border: '1.5px solid var(--fog-60)',
-            borderRadius: 'var(--radius-md)', cursor: 'pointer',
-            background: isCarousel ? 'var(--fog)' : 'var(--white)',
-          }}>
-            <input
-              type="checkbox"
-              checked={isCarousel}
-              onChange={e => setIsCarousel(e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: 'var(--ink)' }}
-            />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 500, fontSize: '0.9375rem' }}>Generate as carousel</div>
-              <div style={{ fontSize: '0.8125rem', color: 'var(--ink-40)' }}>
-                Multiple slides with AI-generated text over images, instead of a single post
+                {!isSource && enabled[p.key] && (
+                  <label style={{
+                    marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
+                    fontSize: '0.8125rem', color: 'var(--ink-40)', cursor: 'pointer',
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={isCopying}
+                      onChange={() => toggleCopyFrom(p.key)}
+                      style={{ accentColor: 'var(--ink)' }}
+                    />
+                    Same as LinkedIn
+                  </label>
+                )}
               </div>
-            </div>
-          </label>
 
-          {isCarousel && (
-            <div className="animate-in" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <label style={{ fontSize: '0.875rem', color: 'var(--ink-40)' }}>Number of slides</label>
-              <input
-                type="number"
-                min={2}
-                max={10}
-                value={slideCount}
-                onChange={e => setSlideCount(Math.max(2, Math.min(10, Number(e.target.value) || 2)))}
-                style={{
-                  width: 70, padding: '8px 10px', border: '1.5px solid var(--fog-60)',
-                  borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', textAlign: 'center',
-                }}
-              />
-              <span style={{ fontSize: '0.78rem', color: 'var(--ink-20)' }}>(2–10)</span>
+              {/* Content fields — hidden when copying from LinkedIn */}
+              {enabled[p.key] && !isCopying && (
+                <div style={{ padding: '16px 18px' }}>
+                  <textarea
+                    value={c.topic}
+                    onChange={e => updateContent(p.key, 'topic', e.target.value)}
+                    placeholder={`Topic for ${p.label}…`}
+                    rows={2}
+                    style={{
+                      width: '100%', padding: '10px 12px', border: '1.5px solid var(--fog-60)',
+                      borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontFamily: 'var(--font-body)',
+                      resize: 'vertical', outline: 'none', marginBottom: 12,
+                    }}
+                  />
+
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                    {TONES.map(t => (
+                      <button key={t.value} type="button" onClick={() => updateContent(p.key, 'tone', t.value)} style={{
+                        padding: '6px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem',
+                        border: `1.5px solid ${c.tone === t.value ? 'var(--ink)' : 'var(--fog-60)'}`,
+                        background: c.tone === t.value ? 'var(--ink)' : 'var(--white)',
+                        color: c.tone === t.value ? 'var(--white)' : 'var(--ink-40)',
+                      }}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {[
+                      { value: 'single',   label: 'Single image' },
+                      { value: 'carousel', label: 'Carousel' },
+                      { value: 'video',    label: 'Video (beta)' },
+                    ].map(f => (
+                      <button key={f.value} type="button" onClick={() => updateContent(p.key, 'format', f.value)} style={{
+                        padding: '6px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem',
+                        border: `1.5px solid ${c.format === f.value ? 'var(--ink)' : 'var(--fog-60)'}`,
+                        background: c.format === f.value ? 'var(--ink)' : 'var(--white)',
+                        color: c.format === f.value ? 'var(--white)' : 'var(--ink-40)',
+                      }}>
+                        {f.label}
+                      </button>
+                    ))}
+                    {c.format === 'carousel' && (
+                      <>
+                        <input
+                          type="number" min={2} max={10} value={c.slideCount}
+                          onChange={e => updateContent(p.key, 'slideCount', Math.max(2, Math.min(10, Number(e.target.value) || 2)))}
+                          style={{ width: 60, padding: '6px 8px', border: '1.5px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', textAlign: 'center' }}
+                        />
+                        <span style={{ fontSize: '0.75rem', color: 'var(--ink-20)' }}>slides</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {enabled[p.key] && isCopying && (
+                <div style={{ padding: '10px 18px', fontSize: '0.8125rem', color: 'var(--ink-20)' }}>
+                  Will use LinkedIn's topic, tone, and format above.
+                </div>
+              )}
             </div>
-          )}
-        </Section>
-        {error && (
+          )
+        })}
+
+        {error && errorCode === 'LIMIT_REACHED' ? (
+          <div className="animate-in" style={{
+            padding: '18px 20px', background: '#FEF3C7', border: '1px solid #FDE68A',
+            borderRadius: 'var(--radius-md)', marginBottom: 20,
+          }}>
+            <div style={{ fontWeight: 600, fontSize: '0.9375rem', color: '#92400E', marginBottom: 4 }}>
+              You've reached your plan's limit
+            </div>
+            <div style={{ fontSize: '0.8125rem', color: '#92400E', marginBottom: 14 }}>
+              {limitInfo ? `${limitInfo.posts_used} of ${limitInfo.posts_limit} posts used this month. ` : ''}
+              Upgrade to keep generating.
+            </div>
+            <Link href="/dashboard/settings" style={{
+              display: 'inline-block', padding: '9px 18px', background: '#92400E',
+              color: 'white', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', fontWeight: 500, textDecoration: 'none',
+            }}>
+              View plans →
+            </Link>
+          </div>
+        ) : error && (
           <div className="animate-in shake-once" style={{
-            padding: '12px 16px',
-            background: 'var(--failed-bg)',
-            border: '1px solid var(--failed-border)',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--failed)',
-            fontSize: '0.875rem',
-            marginBottom: 20,
+            padding: '12px 16px', background: 'var(--failed-bg)', border: '1px solid var(--failed-border)',
+            borderRadius: 'var(--radius-sm)', color: 'var(--failed)', fontSize: '0.875rem', marginBottom: 20,
           }}>
             {error}
           </div>
         )}
 
-        {/* Progress bar */}
         {loading && (
-          <div className="animate-in" style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'var(--ink-40)', marginBottom: 8 }}>
-              <span key={progress < 20 ? 'a' : progress < 50 ? 'b' : progress < 80 ? 'c' : progress < 100 ? 'd' : 'e'} className="animate-in" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                {progress < 100 && <Spinner size={12} />}
-                {progress < 20  ? '🔍 Researching topic…'   :
-                 progress < 50  ? '✍️  Writing content…'    :
-                 progress < 80  ? '🎨 Fetching images…'     :
-                 progress < 100 ? '📤 Exporting to sheet…'  :
-                                  '✅ Complete!'}
-              </span>
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{Math.round(progress)}%</span>
-            </div>
-            <div style={{
-              height: 6,
-              background: 'var(--fog-60)',
-              borderRadius: 99,
-              overflow: 'hidden',
-            }}>
-              {/* backgroundColor (not the `background` shorthand) so the
-                  .progress-stripes class's background-image isn't reset —
-                  a shorthand here silently wipes the stripe animation. */}
-              <div className={progress < 100 ? 'progress-stripes' : ''} style={{
-                height: '100%',
-                width: `${progress}%`,
-                backgroundColor: progress === 100 ? 'var(--done)' : 'var(--ink)',
-                borderRadius: 99,
-                transition: 'width 1.1s var(--ease-out), background-color 0.3s ease',
-              }} />
-            </div>
-            <p style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 8 }}>
-              Generation typically takes 30–90 seconds. Don't close this tab.
-            </p>
+          <div style={{ marginBottom: 20, fontSize: '0.875rem', color: 'var(--ink-40)' }}>
+            Generating… {Math.round(progress)}%
           </div>
         )}
 
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="press hover-lift"
-          style={{
-            width: '100%',
-            padding: '15px 24px',
-            background: loading ? 'var(--fog-60)' : 'var(--ink)',
-            color: loading ? 'var(--ink-20)' : 'var(--white)',
-            borderRadius: 'var(--radius)',
-            fontSize: '1rem',
-            fontWeight: 600,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            transition: 'background 0.2s ease, color 0.2s ease',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 10,
-          }}
-        >
-          {loading ? (
-            <>
-              <Spinner size={18} />
-              Generating…
-            </>
-          ) : (
-            <>Generate Content →</>
-          )}
+        <button type="submit" disabled={loading} style={{
+          padding: '12px 28px', background: 'var(--ink)', color: 'var(--white)',
+          borderRadius: 'var(--radius-sm)', fontSize: '0.9375rem', fontWeight: 500,
+          border: 'none', cursor: loading ? 'default' : 'pointer',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          {loading && <Spinner size={16} />}
+          {loading ? 'Generating…' : 'Generate posts'}
         </button>
       </form>
-    </div>
-  )
-}
-
-function Section({ label, step, children, index = 0 }) {
-  return (
-    <div className="stagger-item" style={{
-      '--i': index,
-      background: 'var(--white)',
-      border: '1px solid var(--fog-60)',
-      borderRadius: 'var(--radius-lg)',
-      padding: '24px 24px',
-      marginBottom: 20,
-      boxShadow: 'var(--shadow-sm)',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <span style={{
-          width: 24, height: 24,
-          background: 'var(--ink)',
-          color: 'var(--white)',
-          borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.65rem',
-          fontWeight: 700,
-          letterSpacing: '0.02em',
-          flexShrink: 0,
-        }}>
-          {step}
-        </span>
-        <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--ink)' }}>{label}</h2>
-      </div>
-      {children}
     </div>
   )
 }

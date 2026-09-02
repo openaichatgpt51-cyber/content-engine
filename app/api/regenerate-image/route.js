@@ -16,7 +16,7 @@ export async function POST(request) {
     }
 
     const params = new URLSearchParams({
-      key:         process.env.PIXABAY_API_KEY,
+      key:         process.env.PIXABAY_API_KEY || '',
       q:           query.trim(),
       image_type:  'photo',
       orientation: 'horizontal',
@@ -24,12 +24,29 @@ export async function POST(request) {
       per_page:    '5',
     })
 
-    const res  = await fetch(`https://pixabay.com/api/?${params}`)
-    const body = await res.json()
+    if (!process.env.PIXABAY_API_KEY) {
+      console.error('PIXABAY_API_KEY is not set — check Vercel env vars')
+      return NextResponse.json({ error: 'Image search is not configured (missing API key)' }, { status: 500 })
+    }
+
+    const res     = await fetch(`https://pixabay.com/api/?${params}`)
+    const rawText = await res.text()
 
     if (!res.ok) {
-      return NextResponse.json({ error: `Pixabay error (${res.status})` }, { status: 502 })
+      // Pixabay returns errors as plain text (e.g. "[ERROR 400] key parameter
+      // is required"), not JSON — surfacing the raw text here instead of
+      // trying to .json() it, which is what was crashing before.
+      console.error('Pixabay error response:', rawText)
+      return NextResponse.json({ error: `Pixabay error (${res.status}): ${rawText}` }, { status: 502 })
     }
+
+    let body
+    try {
+      body = JSON.parse(rawText)
+    } catch {
+      return NextResponse.json({ error: 'Pixabay returned an unexpected response format' }, { status: 502 })
+    }
+
     if (!body.hits?.length) {
       return NextResponse.json({ error: 'No matching images found — try editing the topic first' }, { status: 404 })
     }

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createSupabaseServerClient } from '../../../../lib/supabase-server'
-import { supabaseAdmin } from '../../../../lib/supabase-admin'
+import { createSupabaseServerClient } from '../../../lib/supabase-server'
+import { supabaseAdmin } from '../../../lib/supabase-admin'
 
 // One lightweight read call per platform to confirm the stored token still
 // works — surfaces a broken connection immediately instead of only finding

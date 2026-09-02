@@ -7,6 +7,9 @@
     {
       "path": "/api/cron/fetch-analytics",
       "schedule": "0 5 * * *"
-    }
+    },
+    { 
+      "path": "/api/cron/check-video-status", 
+      "schedule": "*/3 * * * *" }
   ]
 }

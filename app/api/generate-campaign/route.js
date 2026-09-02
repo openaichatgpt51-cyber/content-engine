@@ -12,19 +12,16 @@ export async function POST(request) {
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
     const userId = session.user.id
 
-    const { topics, tone, platforms } = await request.json()
-    const cleanTopics = (topics || []).map(t => t.trim()).filter(Boolean)
+    // groups: [{ topic, platforms: ['LinkedIn','Instagram'], tone, isCarousel, slideCount }]
+    // Built client-side by campaign/page.jsx — each group is one post,
+    // already resolved for which platforms share which topic.
+    const { groups } = await request.json()
+    const cleanGroups = (groups || []).filter(g => g.topic?.trim() && g.platforms?.length)
 
-    if (!cleanTopics.length) {
-      return NextResponse.json({ error: 'At least one topic is required' }, { status: 400 })
-    }
-    if (cleanTopics.length > 20) {
-      return NextResponse.json({ error: 'Campaigns are limited to 20 posts at a time' }, { status: 400 })
-    }
+    if (!cleanGroups.length) return NextResponse.json({ error: 'At least one topic is required' }, { status: 400 })
+    if (cleanGroups.length > 20) return NextResponse.json({ error: 'Campaigns are limited to 20 posts at a time' }, { status: 400 })
 
     // ── Brand profile completeness check ────────────────────────────────
-    // Prompt to complete Settings rather than generate generic, unpersonalized
-    // content for what's meant to be a coordinated brand campaign.
     const { data: profile } = await supabaseAdmin
       .from('brand_profiles')
       .select('company_description, target_audience, topics_to_avoid, example_posts')
@@ -33,14 +30,12 @@ export async function POST(request) {
 
     if (!profile?.company_description?.trim() || !profile?.target_audience?.trim()) {
       return NextResponse.json({
-        error: 'Complete your Brand Voice settings before generating a campaign — a campaign needs a defined company description and target audience to stay on-brand across every post.',
+        error: 'Complete your Brand Voice settings before generating a campaign.',
         code:  'BRAND_PROFILE_INCOMPLETE',
       }, { status: 400 })
     }
 
-    const brandVoiceParts = []
-    brandVoiceParts.push(`Company: ${profile.company_description}`)
-    brandVoiceParts.push(`Audience: ${profile.target_audience}`)
+    const brandVoiceParts = [`Company: ${profile.company_description}`, `Audience: ${profile.target_audience}`]
     if (profile.topics_to_avoid) brandVoiceParts.push(`Avoid discussing: ${profile.topics_to_avoid}`)
     if (profile.example_posts?.filter(Boolean).length) {
       brandVoiceParts.push(`Match the style of these examples:\n${profile.example_posts.filter(Boolean).join('\n---\n')}`)
@@ -59,18 +54,19 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Your subscription has been cancelled.', code: 'SUBSCRIPTION_CANCELED' }, { status: 403 })
     }
     const remaining = sub.posts_limit - sub.posts_used
-    if (cleanTopics.length > remaining) {
+    if (cleanGroups.length > remaining) {
       return NextResponse.json({
-        error: `This campaign needs ${cleanTopics.length} posts, but you only have ${remaining} remaining this month.`,
+        error: `This campaign needs ${cleanGroups.length} posts, but you only have ${remaining} remaining this month.`,
         code:  'LIMIT_REACHED',
-        posts_used: sub.posts_used,
-        posts_limit: sub.posts_limit,
       }, { status: 429 })
     }
 
-    // ── Sequential generation — see note above on why this can't be Promise.all ──
+    // ── Sequential generation ────────────────────────────────────────────
+    // Still sequential, still required — option B's collision-aware
+    // scheduling only works if each post's slot is committed before the
+    // next one checks for collisions. Unchanged from the original design.
     const results = []
-    for (const topic of cleanTopics) {
+    for (const g of cleanGroups) {
       try {
         const headers = { 'Content-Type': 'application/json' }
         if (N8N_WEBHOOK_SECRET) headers['x-webhook-secret'] = N8N_WEBHOOK_SECRET
@@ -79,37 +75,32 @@ export async function POST(request) {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            topic,
-            platforms:    Array.isArray(platforms) ? platforms.join(',') : (platforms || 'LinkedIn,Instagram,Twitter'),
-            tone:         tone || 'Professional',
+            topic:        g.topic.trim(),
+            platforms:    g.platforms.join(','),
+            tone:         g.tone || 'Professional',
             brand_voice:  brandVoice,
-            is_carousel:  false,
-            slide_count:  null,
-            is_campaign:  true,   // tells n8n to use the collision-aware scheduler
+            is_carousel:  !!g.isCarousel,
+            slide_count:  g.isCarousel ? Math.max(2, Math.min(10, Number(g.slideCount) || 5)) : null,
+            is_campaign:  true,
             client_id:    userId,
             client_email: session.user.email,
           }),
         })
 
         if (n8nRes.ok) {
-          results.push({ topic, status: 'generated' })
+          results.push({ topic: g.topic, platforms: g.platforms, status: 'generated' })
           await supabaseAdmin.rpc('increment_post_count', { p_client_id: userId })
         } else {
           const text = await n8nRes.text().catch(() => '')
-          results.push({ topic, status: 'failed', error: `${n8nRes.status} ${text}` })
+          results.push({ topic: g.topic, platforms: g.platforms, status: 'failed', error: `${n8nRes.status} ${text}` })
         }
       } catch (err) {
-        results.push({ topic, status: 'failed', error: err.message })
+        results.push({ topic: g.topic, platforms: g.platforms, status: 'failed', error: err.message })
       }
     }
 
     const succeeded = results.filter(r => r.status === 'generated').length
-    return NextResponse.json({
-      success: true,
-      generated: succeeded,
-      failed: results.length - succeeded,
-      results,
-    })
+    return NextResponse.json({ success: true, generated: succeeded, failed: results.length - succeeded, results })
 
   } catch (err) {
     console.error('Campaign generation error:', err)

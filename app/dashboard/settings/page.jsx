@@ -57,7 +57,12 @@ function SettingsFlow() {
   const [activeTab,    setActiveTab]  = useState(validTabs.includes(requestedTab) ? requestedTab : 'platforms')
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [deleting,          setDeleting]          = useState(false)
-  const [schedule, setSchedule] = useState({ posting_days: [], posting_time: '09:00', timezone: 'Africa/Lagos' })
+  const [schedule, setSchedule] = useState({
+    LinkedIn:  { days: [], time: '09:00' },
+    Instagram: { days: [], time: '09:00' },
+    Twitter:   { days: [], time: '09:00' },
+    timezone:  'Africa/Lagos',
+  })
   const [scheduleSaving, setScheduleSaving] = useState(false)
   const [scheduleSaved,  setScheduleSaved]  = useState(false)
   const [deleteError,       setDeleteError]       = useState('')
@@ -101,22 +106,28 @@ function SettingsFlow() {
     setTimeout(() => setTestResults(r => ({ ...r, [platformKey]: null })), 5000)
   }
 
-  function toggleScheduleDay(day) {
+  function toggleScheduleDay(platform, day) {
     setSchedule(s => ({
       ...s,
-      posting_days: s.posting_days.includes(day) ? s.posting_days.filter(d => d !== day) : [...s.posting_days, day],
+      [platform]: {
+        ...s[platform],
+        days: s[platform].days.includes(day) ? s[platform].days.filter(d => d !== day) : [...s[platform].days, day],
+      },
     }))
   }
 
   async function saveSchedule() {
-    if (!schedule.posting_days.length) return
     setScheduleSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     await supabase.from('onboarding').upsert({
-      client_id:    user.id,
-      posting_days: schedule.posting_days,
-      posting_time: schedule.posting_time,
-      timezone:     schedule.timezone,
+      client_id:               user.id,
+      linkedin_posting_days:   schedule.LinkedIn.days,
+      linkedin_posting_time:   schedule.LinkedIn.time,
+      instagram_posting_days:  schedule.Instagram.days,
+      instagram_posting_time:  schedule.Instagram.time,
+      twitter_posting_days:    schedule.Twitter.days,
+      twitter_posting_time:    schedule.Twitter.time,
+      timezone:                schedule.timezone,
     }, { onConflict: 'client_id' })
     setScheduleSaving(false)
     setScheduleSaved(true)
@@ -140,17 +151,31 @@ function SettingsFlow() {
     setConnections(connMap)
     setLoadingConns(false)
 
-    // Load posting schedule (set during onboarding, editable here)
+    // Load posting schedule (set during onboarding, editable here) —
+    // per-platform columns first; falls back to the old shared columns
+    // for anyone who saved before this migration and hasn't touched
+    // Settings since (the migration SQL also backfills these, so this
+    // fallback is mostly belt-and-suspenders).
     const { data: onboarding } = await supabase
       .from('onboarding')
-      .select('posting_days, posting_time, timezone')
+      .select('linkedin_posting_days, linkedin_posting_time, instagram_posting_days, instagram_posting_time, twitter_posting_days, twitter_posting_time, posting_days, posting_time, timezone')
       .eq('client_id', user.id)
       .maybeSingle()
     if (onboarding) {
       setSchedule({
-        posting_days: onboarding.posting_days || [],
-        posting_time: onboarding.posting_time || '09:00',
-        timezone:     onboarding.timezone || 'Africa/Lagos',
+        LinkedIn: {
+          days: onboarding.linkedin_posting_days || onboarding.posting_days || [],
+          time: onboarding.linkedin_posting_time || onboarding.posting_time || '09:00',
+        },
+        Instagram: {
+          days: onboarding.instagram_posting_days || onboarding.posting_days || [],
+          time: onboarding.instagram_posting_time || onboarding.posting_time || '09:00',
+        },
+        Twitter: {
+          days: onboarding.twitter_posting_days || onboarding.posting_days || [],
+          time: onboarding.twitter_posting_time || onboarding.posting_time || '09:00',
+        },
+        timezone: onboarding.timezone || 'Africa/Lagos',
       })
     }
 
@@ -572,76 +597,92 @@ function SettingsFlow() {
 
       {/* ── Posting Schedule Tab ─────────────────────────────────────────── */}
       {activeTab === 'schedule' && (
-        <div className="animate-in" style={{ maxWidth: 560 }}>
+        <div className="animate-in" style={{ maxWidth: 620 }}>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--ink-40)', marginBottom: 18 }}>
+            Each platform posts on its own schedule — approved content is scheduled to
+            that platform's next available day/time.
+          </p>
+
+          {[
+            { key: 'LinkedIn',  icon: '🔵', label: 'LinkedIn' },
+            { key: 'Instagram', icon: '🟣', label: 'Instagram' },
+            { key: 'Twitter',   icon: '⬛', label: 'X / Twitter' },
+          ].map((p, idx) => (
+            <div key={p.key} className="stagger-item" style={{
+              '--i': idx, background: 'var(--white)', border: '1px solid var(--fog-60)',
+              borderRadius: 'var(--radius-lg)', padding: 20, marginBottom: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                <span>{p.icon}</span>
+                <h3 style={{ fontSize: '0.9375rem', fontWeight: 600 }}>{p.label}</h3>
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(day => (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => toggleScheduleDay(p.key, day)}
+                    style={{
+                      padding: '7px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem',
+                      border: `1.5px solid ${schedule[p.key].days.includes(day) ? 'var(--ink)' : 'var(--fog-60)'}`,
+                      background: schedule[p.key].days.includes(day) ? 'var(--ink)' : 'var(--white)',
+                      color: schedule[p.key].days.includes(day) ? 'var(--white)' : 'var(--ink-40)',
+                    }}
+                  >
+                    {day.slice(0, 3)}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <label style={{ fontSize: '0.8125rem', color: 'var(--ink-40)' }}>Time</label>
+                <input
+                  type="time"
+                  value={schedule[p.key].time}
+                  onChange={e => setSchedule(s => ({ ...s, [p.key]: { ...s[p.key], time: e.target.value } }))}
+                  style={{ padding: '7px 10px', border: '1.5px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem' }}
+                />
+              </div>
+
+              {!schedule[p.key].days.length && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 10 }}>
+                  No days selected — posts for this platform won't have a schedule to follow.
+                </p>
+              )}
+            </div>
+          ))}
+
           <div style={{
             background: 'var(--white)', border: '1px solid var(--fog-60)',
-            borderRadius: 'var(--radius-lg)', padding: 24,
+            borderRadius: 'var(--radius-lg)', padding: 20, marginBottom: 20,
           }}>
-            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 4 }}>Posting days</h3>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--ink-40)', marginBottom: 14 }}>
-              Approved posts are scheduled to your next available day/time below.
+            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 10 }}>Timezone</h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--ink-40)', marginBottom: 12 }}>
+              Shared across all platforms — the times above are all in this timezone.
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
-              {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(day => (
-                <button
-                  key={day}
-                  type="button"
-                  onClick={() => toggleScheduleDay(day)}
-                  style={{
-                    padding: '8px 16px', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem',
-                    border: `1.5px solid ${schedule.posting_days.includes(day) ? 'var(--ink)' : 'var(--fog-60)'}`,
-                    background: schedule.posting_days.includes(day) ? 'var(--ink)' : 'var(--white)',
-                    color: schedule.posting_days.includes(day) ? 'var(--white)' : 'var(--ink-40)',
-                  }}
-                >
-                  {day.slice(0, 3)}
-                </button>
-              ))}
-            </div>
-
-            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 10 }}>Preferred time</h3>
-            <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-              <input
-                type="time"
-                value={schedule.posting_time}
-                onChange={e => setSchedule(s => ({ ...s, posting_time: e.target.value }))}
-                style={{
-                  padding: '9px 12px', border: '1.5px solid var(--fog-60)',
-                  borderRadius: 'var(--radius-sm)', fontSize: '0.875rem',
-                }}
-              />
-              <select
-                value={schedule.timezone}
-                onChange={e => setSchedule(s => ({ ...s, timezone: e.target.value }))}
-                style={{
-                  padding: '9px 12px', border: '1.5px solid var(--fog-60)',
-                  borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', flex: 1,
-                }}
-              >
-                {['Africa/Lagos','Europe/London','America/New_York','America/Los_Angeles','Asia/Dubai','Asia/Singapore'].map(tz => (
-                  <option key={tz} value={tz}>{tz}</option>
-                ))}
-              </select>
-            </div>
-
-            {!schedule.posting_days.length && (
-              <p style={{ fontSize: '0.8125rem', color: 'var(--failed)', marginBottom: 16 }}>
-                Select at least one day.
-              </p>
-            )}
-
-            <button
-              onClick={saveSchedule}
-              disabled={scheduleSaving || !schedule.posting_days.length}
-              style={{
-                padding: '10px 22px', fontSize: '0.875rem', fontWeight: 500,
-                background: 'var(--ink)', color: 'var(--white)', border: 'none',
-                borderRadius: 'var(--radius-sm)', cursor: scheduleSaving ? 'default' : 'pointer',
-              }}
+            <select
+              value={schedule.timezone}
+              onChange={e => setSchedule(s => ({ ...s, timezone: e.target.value }))}
+              style={{ padding: '9px 12px', border: '1.5px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', width: '100%' }}
             >
-              {scheduleSaving ? 'Saving…' : scheduleSaved ? '✓ Saved' : 'Save schedule'}
-            </button>
+              {['Africa/Lagos','Europe/London','America/New_York','America/Los_Angeles','Asia/Dubai','Asia/Singapore'].map(tz => (
+                <option key={tz} value={tz}>{tz}</option>
+              ))}
+            </select>
           </div>
+
+          <button
+            onClick={saveSchedule}
+            disabled={scheduleSaving}
+            style={{
+              padding: '10px 22px', fontSize: '0.875rem', fontWeight: 500,
+              background: 'var(--ink)', color: 'var(--white)', border: 'none',
+              borderRadius: 'var(--radius-sm)', cursor: scheduleSaving ? 'default' : 'pointer',
+            }}
+          >
+            {scheduleSaving ? 'Saving…' : scheduleSaved ? '✓ Saved' : 'Save schedule'}
+          </button>
         </div>
       )}
 

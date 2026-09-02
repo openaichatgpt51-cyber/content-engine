@@ -404,8 +404,10 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
 
           {/* LEFT — image + editor */}
           <div style={{ padding: '20px 20px 20px 24px', borderRight: '1px solid var(--fog-60)' }}>
-            {/* Image display */}
-            {localPost.is_carousel && localPost.carousel_slides?.length ? (
+            {/* Image / video / carousel display */}
+            {localPost.is_video ? (
+              <VideoPreview status={localPost.video_status} url={localPost.video_url} />
+            ) : localPost.is_carousel && localPost.carousel_slides?.length ? (
               <CarouselStrip slides={localPost.carousel_slides} />
             ) : (
               <div style={{ marginBottom: 16 }}>
@@ -703,6 +705,54 @@ const btn = {
 }
 
 // ── Platform Preview Helpers ────────────────────────────────────────────────
+function VideoPreview({ status, url }) {
+  if (status === 'ready' && url) {
+    return (
+      <div style={{ marginBottom: 16, borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--fog-60)' }}>
+        <video
+          src={url}
+          controls
+          style={{ width: '100%', maxHeight: 320, display: 'block', background: '#000' }}
+        />
+      </div>
+    )
+  }
+
+  if (status === 'failed') {
+    return (
+      <div style={{
+        marginBottom: 16, padding: '24px', textAlign: 'center', borderRadius: 'var(--radius)',
+        background: 'var(--failed-bg)', border: '1px solid var(--failed-border)',
+      }}>
+        <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>⚠️</div>
+        <p style={{ fontSize: '0.8125rem', color: 'var(--failed)', fontWeight: 500 }}>
+          Video generation failed
+        </p>
+        <p style={{ fontSize: '0.75rem', color: 'var(--ink-40)', marginTop: 4 }}>
+          Check Notifications for details, or edit and approve as text-only.
+        </p>
+      </div>
+    )
+  }
+
+  // Default / 'generating' — video isn't ready yet, checked every ~3 min
+  // by the check-video-status cron job.
+  return (
+    <div style={{
+      marginBottom: 16, padding: '32px', textAlign: 'center', borderRadius: 'var(--radius)',
+      background: 'var(--fog)', border: '1px solid var(--fog-60)',
+    }}>
+      <div className="pop-in" style={{ fontSize: '1.5rem', marginBottom: 6 }}>🎬</div>
+      <p style={{ fontSize: '0.8125rem', color: 'var(--ink-40)', fontWeight: 500 }}>
+        Generating video…
+      </p>
+      <p style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 4 }}>
+        Usually ready in a few minutes — refresh this page to check.
+      </p>
+    </div>
+  )
+}
+
 function CarouselStrip({ slides }) {
   const [active, setActive] = useState(0)
   const sorted = [...slides].sort((a, b) => a.slide_number - b.slide_number)
