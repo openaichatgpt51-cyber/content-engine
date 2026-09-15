@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createSupabaseServerClient } from '../../../../lib/supabase-server'
-import { supabaseAdmin } from '../../../../lib/supabase-admin'
+import { createSupabaseServerClient } from '../../../lib/supabase-server'
+import { supabaseAdmin } from '../../../lib/supabase-admin'
 
 const N8N_WEBHOOK_URL    = process.env.N8N_WEBHOOK_URL
 const N8N_WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET

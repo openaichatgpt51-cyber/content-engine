@@ -4,8 +4,6 @@ import { useSearchParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { Spinner, Skeleton } from '../../../components/ui'
 import KillSwitch from '../../../components/KillSwitch'
-import UsageMeter from '../../../components/UsageMeter'
-import { PLANS } from '../../../lib/plans'
 
 const PLATFORMS = [
   {
@@ -43,7 +41,7 @@ const TONES = ['Professional', 'Casual', 'Provocative', 'Educational', 'Inspirin
 
 function SettingsFlow() {
   const searchParams = useSearchParams()
-  const validTabs = ['platforms', 'brandvoice', 'posting', 'schedule', 'billing', 'privacy']
+  const validTabs = ['platforms', 'brandvoice', 'posting', 'schedule', 'privacy']
   const requestedTab = searchParams.get('tab')
   const [connections, setConnections] = useState({})
   const [brand, setBrand]             = useState({
@@ -71,7 +69,6 @@ function SettingsFlow() {
   const [analyzing, setAnalyzing] = useState(false)
   const [imageError, setImageError] = useState('')
   const [scheduleSaving, setScheduleSaving] = useState(false)
-  const [planSwitching,  setPlanSwitching]  = useState(null) // plan key currently being switched to, or null
   const [scheduleSaved,  setScheduleSaved]  = useState(false)
   const [deleteError,       setDeleteError]       = useState('')
   const [testResults, setTestResults] = useState({})   // { linkedin: 'testing'|'ok'|'failed' }
@@ -164,22 +161,6 @@ function SettingsFlow() {
         days: s[platform].days.includes(day) ? s[platform].days.filter(d => d !== day) : [...s[platform].days, day],
       },
     }))
-  }
-
-  async function switchPlan(planKey) {
-    setPlanSwitching(planKey)
-    try {
-      const res  = await fetch('/api/stripe/checkout', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ planKey }),
-      })
-      const data = await res.json()
-      if (data.url) window.location.href = data.url
-      else setPlanSwitching(null)
-    } catch {
-      setPlanSwitching(null)
-    }
   }
 
   async function saveSchedule() {
@@ -330,7 +311,6 @@ function SettingsFlow() {
           { key: 'brandvoice', label: 'Brand Voice' },
           { key: 'posting',    label: 'Posting Control' },
           { key: 'schedule',   label: 'Posting Schedule' },
-          { key: 'billing',    label: 'Plan & Billing' },
           { key: 'privacy',    label: 'Privacy & Data' },
         ].map(t => (
           <button
@@ -803,54 +783,6 @@ function SettingsFlow() {
           >
             {scheduleSaving ? 'Saving…' : scheduleSaved ? '✓ Saved' : 'Save schedule'}
           </button>
-        </div>
-      )}
-
-      {/* ── Plan & Billing Tab ───────────────────────────────────────────── */}
-      {activeTab === 'billing' && (
-        <div className="animate-in" style={{ maxWidth: 560 }}>
-          <UsageMeter />
-
-          <div style={{
-            background: 'var(--white)', border: '1px solid var(--fog-60)',
-            borderRadius: 'var(--radius-lg)', padding: 24, marginTop: 20,
-          }}>
-            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 14 }}>Change plan</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {Object.entries(PLANS).map(([key, plan]) => (
-                <div key={key} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '14px 16px', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius)',
-                }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
-                      {plan.name} — ${plan.price}<span style={{ fontWeight: 400, color: 'var(--ink-20)' }}>/mo</span>
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--ink-20)' }}>
-                      {plan.posts_limit >= 999999 ? 'Unlimited posts' : `${plan.posts_limit} posts/mo`} · {plan.workspaces_limit} workspace{plan.workspaces_limit > 1 ? 's' : ''}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => switchPlan(key)}
-                    disabled={planSwitching === key}
-                    className="press hover-lift"
-                    style={{
-                      padding: '8px 16px', fontSize: '0.8125rem', fontWeight: 500,
-                      background: 'var(--ink)', color: 'var(--white)', border: 'none',
-                      borderRadius: 'var(--radius-sm)', cursor: planSwitching ? 'default' : 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 6,
-                    }}
-                  >
-                    {planSwitching === key && <Spinner size={12} light />}
-                    {planSwitching === key ? 'Redirecting…' : 'Switch'}
-                  </button>
-                </div>
-              ))}
-            </div>
-            <p style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 14 }}>
-              Switching opens Stripe checkout for the new plan. Your current plan stays active until that completes.
-            </p>
-          </div>
         </div>
       )}
 

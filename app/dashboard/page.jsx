@@ -1,9 +1,9 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useMemo, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
-import { FadeImage, Skeleton, Toast } from '../../components/ui'
+import { FadeImage, Skeleton, Toast, Spinner } from '../../components/ui'
 
 const PLATFORMS = ['All', 'LinkedIn', 'Instagram', 'X']
 
@@ -54,14 +54,17 @@ function sameDay(a, b) {
          a.getDate()     === b.getDate()
 }
 
-export default function DashboardPage() {
+function DashboardFlow() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const targetPostId = searchParams.get('postId')
   const [posts,      setPosts]      = useState([])
   const [loading,    setLoading]    = useState(true)
   const [platform,   setPlatform]   = useState('All')
   const [today]                     = useState(new Date())
   const [viewYear,   setViewYear]   = useState(today.getFullYear())
   const [viewMonth,  setViewMonth]  = useState(today.getMonth())
+  const todayCellRef = useRef(null)
   const [selected,   setSelected]   = useState(null) // selected post for detail panel
   const [dayList,    setDayList]    = useState(null) // { date, posts } — full list for a clicked day
   const [postingDays, setPostingDays] = useState(null) // e.g. ['Monday','Wednesday','Friday'] — null while loading
@@ -84,7 +87,40 @@ export default function DashboardPage() {
         supabase.from('onboarding').select('posting_days').eq('client_id', user.id).maybeSingle(),
       ])
 
-      if (!postsRes.error) setPosts(postsRes.data || [])
+      if (!postsRes.error) {
+        const loaded = postsRes.data || []
+        setPosts(loaded)
+
+        // Deep link from a notification ("View post") — open that specific
+        // post's detail panel and jump the calendar to its month, taking
+        // priority over the generic upcoming-post jump below. Works for
+        // any status (FAILED/PARTIAL/DONE included) since the detail panel
+        // itself isn't restricted the way Review Queue is.
+        const target = targetPostId ? loaded.find(p => p.id === targetPostId) : null
+        if (target) {
+          setSelected(target)
+          const d = new Date(target.linkedin_scheduled_time || target.instagram_scheduled_time || target.twitter_scheduled_time)
+          if (!isNaN(d)) {
+            setViewYear(d.getFullYear())
+            setViewMonth(d.getMonth())
+          }
+        } else {
+          // Land on the earliest upcoming post's month instead of always
+          // defaulting to today. 'SCHEDULED' doesn't exist as a status in
+          // this schema — PENDING (approved, awaiting its post time) and
+          // AWAITING_APPROVAL are the two "still coming up" states.
+          const upcoming = loaded
+            .filter(p => ['AWAITING_APPROVAL', 'PENDING'].includes(p.posting_status) && p.linkedin_scheduled_time)
+            .sort((a, b) => new Date(a.linkedin_scheduled_time) - new Date(b.linkedin_scheduled_time))[0]
+
+          if (upcoming) {
+            const d = new Date(upcoming.linkedin_scheduled_time)
+            setViewYear(d.getFullYear())
+            setViewMonth(d.getMonth())
+          }
+          // else: viewYear/viewMonth already default to today via useState above
+        }
+      }
       setPostingDays(onboardingRes.data?.posting_days || null)
       setLoading(false)
     }
@@ -92,6 +128,17 @@ export default function DashboardPage() {
   }, [])
 
   const calDays = useMemo(() => buildCalendarDays(viewYear, viewMonth), [viewYear, viewMonth])
+
+  // Bring today's cell into comfortable view instead of leaving the page
+  // scrolled to the top of the grid (which — since the grid always starts
+  // at the 1st of the month — meant "the first week" was what you saw by
+  // default, regardless of where today actually falls). Only relevant
+  // when today's month is what's actually being viewed.
+  useEffect(() => {
+    if (loading) return
+    if (viewYear !== today.getFullYear() || viewMonth !== today.getMonth()) return
+    todayCellRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [loading, viewYear, viewMonth])
 
   // A day is a valid scheduling target if it's one of the client's chosen
   // posting days (from onboarding) and isn't in the past. If posting_days
@@ -402,6 +449,7 @@ export default function DashboardPage() {
               return (
                 <div
                   key={idx}
+                  ref={isToday ? todayCellRef : null}
                   className={`cal-day stagger-item${dayPosts.length ? ' cal-day--clickable' : ''}${!available ? ' cal-day--unavailable' : ''}`}
                   style={{
                     '--i': Math.floor(idx / 7),
@@ -597,18 +645,30 @@ export default function DashboardPage() {
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <Link href={`/dashboard/review?postId=${selected.id}`} className="press hover-lift" style={{
-                flex: 1,
-                padding: '10px 0',
-                textAlign: 'center',
-                background: 'var(--ink)',
-                color: 'var(--white)',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.875rem',
-                fontWeight: 500,
-              }}>
-                Open in Review
-              </Link>
+              {selected.posting_status === 'AWAITING_APPROVAL' ? (
+                <Link href={`/dashboard/review?postId=${selected.id}`} className="press hover-lift" style={{
+                  flex: 1,
+                  padding: '10px 0',
+                  textAlign: 'center',
+                  background: 'var(--ink)',
+                  color: 'var(--white)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                }}>
+                  Open in Review
+                </Link>
+              ) : (
+                // Review Queue only ever loads AWAITING_APPROVAL posts — linking
+                // there for any other status is a dead end (nothing to scroll
+                // to). Show a status-appropriate note instead of a broken link.
+                <div style={{
+                  flex: 1, padding: '10px 0', textAlign: 'center',
+                  fontSize: '0.8125rem', color: 'var(--ink-20)',
+                }}>
+                  {STATUS_CONFIG[selected.posting_status]?.label || selected.posting_status}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -663,6 +723,18 @@ export default function DashboardPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Spinner />
+      </div>
+    }>
+      <DashboardFlow />
+    </Suspense>
   )
 }
 

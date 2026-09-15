@@ -31,6 +31,30 @@ export default function CampaignPage() {
   const [error,    setError]    = useState('')
   const [errorCode, setErrorCode] = useState(null)
   const [result,   setResult]   = useState(null)
+  const [suggesting, setSuggesting] = useState({})   // { LinkedIn: true } while loading
+
+  async function suggestTopics(platformKey) {
+    setSuggesting(s => ({ ...s, [platformKey]: true }))
+    setError('')
+    try {
+      const res = await fetch('/api/suggest-topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: platformKey, count: 5 }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Suggestion failed')
+      // Append to whatever's already there rather than overwrite — the
+      // user may have already typed something worth keeping.
+      const existing = platformState[platformKey].topicsText.trim()
+      const combined = [existing, ...body.topics].filter(Boolean).join('\n')
+      updatePlatform(platformKey, 'topicsText', combined)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSuggesting(s => ({ ...s, [platformKey]: false }))
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -217,10 +241,25 @@ export default function CampaignPage() {
 
               {enabled[p.key] && !isCopying && (
                 <div style={{ padding: '16px 18px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => suggestTopics(p.key)}
+                      disabled={suggesting[p.key]}
+                      style={{
+                        padding: '6px 12px', fontSize: '0.78rem', fontWeight: 500,
+                        background: 'var(--fog)', border: '1px solid var(--fog-60)',
+                        borderRadius: 'var(--radius-sm)', cursor: suggesting[p.key] ? 'default' : 'pointer',
+                        color: 'var(--ink-40)',
+                      }}
+                    >
+                      {suggesting[p.key] ? 'Thinking…' : `✨ Suggest topics for ${p.label}`}
+                    </button>
+                  </div>
                   <textarea
                     value={s.topicsText}
                     onChange={e => updatePlatform(p.key, 'topicsText', e.target.value)}
-                    placeholder={`One topic per line for ${p.label}…`}
+                    placeholder={`One topic per line for ${p.label}… or click "Suggest topics" above`}
                     rows={4}
                     style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontFamily: 'var(--font-body)', resize: 'vertical', outline: 'none', marginBottom: 12 }}
                   />

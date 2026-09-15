@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '../../../../lib/supabase-admin'
+import { supabaseAdmin } from '../../../lib/supabase-admin'
 
 export default async function AdminClientsPage() {
   const [{ data: clients }, { data: subs }, { data: posts }] = await Promise.all([

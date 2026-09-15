@@ -159,6 +159,11 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
   const [leaving,       setLeaving]     = useState(false)
   const [imgPanelOpen,  setImgPanelOpen] = useState(false)
   const [imgBusy,       setImgBusy]      = useState(false)
+  // Mirrors the same contextual-suffix technique n8n's own image search
+  // uses (see "Prepare Image Prompts" — topic + a business-context phrase)
+  // instead of sending the bare topic, which Pixabay tends to match too
+  // loosely on its own. Editable so a bad default doesn't dead-end you.
+  const [imgQuery, setImgQuery] = useState(`${post.topic} technology leadership`)
   const fileInputRef = useRef(null)
 
   const cfg         = TABS.find(t => t.key === tab)
@@ -308,7 +313,7 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
       const res = await fetch('/api/regenerate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: localPost.topic }),
+        body: JSON.stringify({ query: imgQuery }),
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Regeneration failed')
@@ -437,11 +442,24 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
                   <div className="animate-in" style={{
                     marginTop: 8, padding: 12, background: 'var(--fog)',
                     border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)',
-                    display: 'flex', gap: 8,
                   }}>
+                    <input
+                      type="text"
+                      value={imgQuery}
+                      onChange={e => setImgQuery(e.target.value)}
+                      placeholder="Describe the image you want…"
+                      disabled={imgBusy}
+                      style={{
+                        width: '100%', padding: '7px 10px', marginBottom: 8,
+                        fontSize: '0.8125rem', border: '1px solid var(--fog-60)',
+                        borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-body)',
+                        background: 'var(--white)',
+                      }}
+                    />
+                    <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       onClick={regenerateImage}
-                      disabled={imgBusy}
+                      disabled={imgBusy || !imgQuery.trim()}
                       style={{
                         flex: 1, padding: '8px 0', fontSize: '0.8125rem', fontWeight: 500,
                         background: 'var(--white)', border: '1px solid var(--fog-60)',
@@ -461,6 +479,7 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
                     >
                       📤 Upload
                     </button>
+                    </div>
                     <input
                       ref={fileInputRef}
                       type="file"

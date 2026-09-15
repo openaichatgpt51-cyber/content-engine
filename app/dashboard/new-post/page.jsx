@@ -203,12 +203,16 @@ export default function NewPostPage() {
 
               {/* Content fields — hidden when copying from LinkedIn */}
               {enabled[p.key] && !isCopying && (
-                <div style={{ padding: '16px 18px' }}>
+                <div className="animate-in" style={{ padding: '16px 18px' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--ink-40)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    Topic for {p.label}
+                  </label>
                   <textarea
                     value={c.topic}
                     onChange={e => updateContent(p.key, 'topic', e.target.value)}
-                    placeholder={`Topic for ${p.label}…`}
+                    placeholder={`e.g. What's different about this angle for ${p.label}?`}
                     rows={2}
+                    autoFocus
                     style={{
                       width: '100%', padding: '10px 12px', border: '1.5px solid var(--fog-60)',
                       borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontFamily: 'var(--font-body)',
