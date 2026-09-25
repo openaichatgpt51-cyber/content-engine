@@ -31,7 +31,15 @@ function ReviewFlow() {
   const [postingPaused, setPostingPaused] = useState(false)
   const scrolledRef = useRef(false)
 
-  useEffect(() => { loadPosts(); loadAccounts(); loadPauseState() }, [])
+  useEffect(() => {
+    loadPosts(); loadAccounts(); loadPauseState()
+    // Carousel/video generation finishes seconds to minutes after a post
+    // first appears (its row is inserted before generation completes) —
+    // without this, a card can freeze showing the pre-generation state
+    // until the next full page load.
+    const interval = setInterval(() => loadPosts({ silent: true }), 8000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Deep-link support: when arriving with ?postId=..., scroll to and
   // highlight that specific card once the list has rendered.
@@ -67,8 +75,8 @@ function ReviewFlow() {
     setPostingPaused(Boolean(data?.posting_paused))
   }
 
-  async function loadPosts() {
-  setLoading(true)
+  async function loadPosts({ silent = false } = {}) {
+  if (!silent) setLoading(true)
 
   // Require a session — do NOT fall back to an unfiltered query. Without this,
   // an unauthenticated visitor would see every client's review queue.
@@ -76,7 +84,7 @@ function ReviewFlow() {
   const user = authData?.user
 
   if (!user) {
-    setLoading(false)
+    if (!silent) setLoading(false)
     router.push('/login')
     return
   }
@@ -94,7 +102,7 @@ function ReviewFlow() {
     setPosts(data || [])
   }
 
-  setLoading(false)
+  if (!silent) setLoading(false)
 }
 
   function updateLocalPost(postId, changes) {
@@ -176,6 +184,26 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
   const [imgQuery, setImgQuery] = useState(`${post.topic} technology leadership`)
   const fileInputRef = useRef(null)
 
+  // Carousel per-slide editing state
+  const [carouselActive,    setCarouselActive]    = useState(0)
+  const [slideEditing,      setSlideEditing]      = useState(false)
+  const [slideDraftText,    setSlideDraftText]    = useState('')
+  const [slideImgPanelOpen, setSlideImgPanelOpen] = useState(false)
+  const [slideImgBusy,      setSlideImgBusy]      = useState(false)
+  const [slideImgQuery,     setSlideImgQuery]     = useState('')
+  const slideFileInputRef = useRef(null)
+
+  // localPost is only ever initialised from `post` once (React state).
+  // Parent-level refreshes (approve/reject elsewhere, or the background
+  // poll in ReviewFlow catching a carousel/video that just finished
+  // generating) update the `post` prop, but that alone doesn't touch this
+  // component's own state — without this effect a card can stay frozen on
+  // stale data indefinitely. Skipped while a draft edit is in progress so
+  // a poll landing mid-edit can't wipe out unsaved changes.
+  useEffect(() => {
+    if (!editing && !slideEditing) setLocalPost(post)
+  }, [post])
+
   const cfg         = availableTabs.find(t => t.key === tab) || availableTabs[0]
   const currentText = localPost[cfg.field] || ''
   const charCount   = editing ? draftText.length : currentText.length
@@ -183,6 +211,113 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
   // not raw image bytes — it can never render inside an <img> tag. image_1_url is the
   // actual embeddable image (lh3.googleusercontent.com), so it must take priority.
   const imageUrl    = localPost.image_1_url || localPost.image_1_view_url
+
+  const sortedSlides    = localPost.carousel_slides ? [...localPost.carousel_slides].sort((a, b) => a.slide_number - b.slide_number) : []
+  const isCarouselPost  = localPost.is_carousel && sortedSlides.length > 0
+  const currentSlide    = isCarouselPost ? (sortedSlides[carouselActive] || sortedSlides[0]) : null
+  // The Preview panel used to always show the post's single static image,
+  // even for a carousel post, and never followed slide navigation — it now
+  // shows whichever slide is selected, only on the tab that actually has
+  // the carousel (Instagram).
+  const useCarouselPreview = isCarouselPost && tab === 'instagram'
+  const previewImageUrl    = useCarouselPreview ? currentSlide?.image_url : imageUrl
+  const previewText        = useCarouselPreview ? (currentSlide?.text || '') : (editing ? draftText : currentText)
+
+  function selectSlide(i) {
+    setCarouselActive(i)
+    setSlideEditing(false)
+    setSlideImgPanelOpen(false)
+  }
+
+  // Each slide's image has its caption burned in via a Cloudinary text
+  // overlay (see n8n's Build Overlay URL) — editing the text alone would
+  // leave the old caption baked into the image, so this rebuilds that same
+  // overlay URL with the new text. Falls back to leaving the URL untouched
+  // if it isn't a recognisable Cloudinary overlay URL (e.g. after a manual
+  // image swap via Upload/Regenerate below).
+  function rebuildSlideOverlayUrl(oldUrl, newText) {
+    const match = oldUrl?.match(/(l_text:Arial_64_bold:)([^,]*)(,co_white)/)
+    if (!match) return oldUrl
+    return oldUrl.replace(match[0], match[1] + encodeURIComponent(newText) + match[3])
+  }
+
+  function startSlideEdit() {
+    setSlideDraftText(currentSlide?.text || '')
+    setSlideEditing(true)
+  }
+  function cancelSlideEdit() {
+    setSlideDraftText('')
+    setSlideEditing(false)
+  }
+  async function saveSlideEdit() {
+    if (!currentSlide) return
+    if (slideDraftText === currentSlide.text) { cancelSlideEdit(); return }
+    setSaving(true)
+    const newImageUrl = rebuildSlideOverlayUrl(currentSlide.image_url, slideDraftText)
+    const newSlides = sortedSlides.map((s, i) => i === carouselActive ? { ...s, text: slideDraftText, image_url: newImageUrl } : s)
+    const { error } = await supabase.from('posts').update({ carousel_slides: newSlides }).eq('id', localPost.id)
+    setSaving(false)
+    if (error) { showMsg('Failed to save — ' + error.message, 'error'); return }
+    setLocalPost(p => ({ ...p, carousel_slides: newSlides }))
+    onUpdate({ carousel_slides: newSlides })
+    setSlideEditing(false)
+    showMsg('Slide updated')
+  }
+
+  function openSlideImgPanel() {
+    setSlideImgQuery(currentSlide?.image_search_query || currentSlide?.text || '')
+    setSlideImgPanelOpen(o => !o)
+  }
+
+  async function saveSlideImageUrl(newUrl) {
+    const newSlides = sortedSlides.map((s, i) => i === carouselActive ? { ...s, image_url: newUrl } : s)
+    const { error } = await supabase.from('posts').update({ carousel_slides: newSlides }).eq('id', localPost.id)
+    setSlideImgBusy(false)
+    if (error) { showMsg('Failed to update image — ' + error.message, 'error'); return }
+    setLocalPost(p => ({ ...p, carousel_slides: newSlides }))
+    onUpdate({ carousel_slides: newSlides })
+    setSlideImgPanelOpen(false)
+    // A swapped-in image is a plain photo — it doesn't carry the caption
+    // overlay the generated ones do, so say so rather than leave it a
+    // silent surprise.
+    showMsg('Slide image updated — re-enter its caption via Edit to burn in new overlay text')
+  }
+
+  async function regenerateSlideImage() {
+    setSlideImgBusy(true)
+    try {
+      const res = await fetch('/api/regenerate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: slideImgQuery }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Regeneration failed')
+      await saveSlideImageUrl(body.imageUrl)
+    } catch (err) {
+      setSlideImgBusy(false)
+      showMsg(err.message, 'error')
+    }
+  }
+
+  async function uploadSlideImage(file) {
+    if (!file) return
+    setSlideImgBusy(true)
+    try {
+      const ext  = file.name.split('.').pop()
+      const path = `${localPost.client_id}/${localPost.id}-slide${carouselActive}-${Date.now()}.${ext}`
+      const { error: uploadErr } = await supabase.storage
+        .from('post-images')
+        .upload(path, file, { upsert: true })
+      if (uploadErr) throw uploadErr
+
+      const { data: pub } = supabase.storage.from('post-images').getPublicUrl(path)
+      await saveSlideImageUrl(pub.publicUrl)
+    } catch (err) {
+      setSlideImgBusy(false)
+      showMsg('Upload failed — ' + err.message, 'error')
+    }
+  }
 
   function showMsg(msg, type = 'success') {
     setToast({ msg, type })
@@ -422,8 +557,90 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
             {/* Image / video / carousel display */}
             {localPost.is_video ? (
               <VideoPreview status={localPost.video_status} url={localPost.video_url} />
-            ) : localPost.is_carousel && localPost.carousel_slides?.length ? (
-              <CarouselStrip slides={localPost.carousel_slides} />
+            ) : isCarouselPost ? (
+              <div style={{ marginBottom: 16 }}>
+                <CarouselStrip slides={sortedSlides} active={carouselActive} onActiveChange={selectSlide} />
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button
+                    onClick={startSlideEdit}
+                    disabled={slideEditing}
+                    style={{ flex: 1, padding: '7px 0', fontSize: '0.75rem', fontWeight: 500, background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', cursor: slideEditing ? 'default' : 'pointer' }}
+                  >
+                    ✏️ Edit slide copy
+                  </button>
+                  <button
+                    onClick={openSlideImgPanel}
+                    disabled={slideImgBusy}
+                    style={{ flex: 1, padding: '7px 0', fontSize: '0.75rem', fontWeight: 500, background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', cursor: slideImgBusy ? 'default' : 'pointer' }}
+                  >
+                    {slideImgBusy ? 'Working…' : '🖼️ Change image'}
+                  </button>
+                </div>
+
+                {slideEditing && (
+                  <div className="animate-in" style={{ marginTop: 8 }}>
+                    <textarea
+                      value={slideDraftText}
+                      onChange={e => setSlideDraftText(e.target.value)}
+                      rows={2}
+                      style={{ width: '100%', padding: '8px 10px', fontSize: '0.8125rem', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-body)', resize: 'vertical' }}
+                    />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                      <button onClick={saveSlideEdit} disabled={saving} style={{ flex: 1, padding: '7px 0', fontSize: '0.75rem', fontWeight: 500, background: 'var(--ink)', color: 'var(--white)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: saving ? 'default' : 'pointer' }}>
+                        {saving ? <Spinner light /> : 'Save'}
+                      </button>
+                      <button onClick={cancelSlideEdit} disabled={saving} style={{ flex: 1, padding: '7px 0', fontSize: '0.75rem', fontWeight: 500, background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', cursor: saving ? 'default' : 'pointer' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {slideImgPanelOpen && (
+                  <div className="animate-in" style={{
+                    marginTop: 8, padding: 12, background: 'var(--fog)',
+                    border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)',
+                  }}>
+                    <input
+                      type="text"
+                      value={slideImgQuery}
+                      onChange={e => setSlideImgQuery(e.target.value)}
+                      placeholder="Describe the image you want…"
+                      disabled={slideImgBusy}
+                      style={{
+                        width: '100%', padding: '7px 10px', marginBottom: 8,
+                        fontSize: '0.8125rem', border: '1px solid var(--fog-60)',
+                        borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-body)',
+                        background: 'var(--white)',
+                      }}
+                    />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={regenerateSlideImage}
+                        disabled={slideImgBusy || !slideImgQuery.trim()}
+                        style={{ flex: 1, padding: '8px 0', fontSize: '0.8125rem', fontWeight: 500, background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', cursor: slideImgBusy ? 'default' : 'pointer' }}
+                      >
+                        🔄 Regenerate
+                      </button>
+                      <button
+                        onClick={() => slideFileInputRef.current?.click()}
+                        disabled={slideImgBusy}
+                        style={{ flex: 1, padding: '8px 0', fontSize: '0.8125rem', fontWeight: 500, background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', cursor: slideImgBusy ? 'default' : 'pointer' }}
+                      >
+                        📤 Upload
+                      </button>
+                    </div>
+                    <input
+                      ref={slideFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={e => uploadSlideImage(e.target.files?.[0])}
+                    />
+                  </div>
+                )}
+              </div>
             ) : (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ position: 'relative', border: (localPost.image_1_url || localPost.image_1_view_url) ? '1px solid var(--fog-60)' : 'none', borderRadius: 'var(--radius)' }}>
@@ -610,9 +827,9 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
               Preview
             </div>
             <div style={{ overflowY: 'auto', maxHeight: 560 }}>
-              {tab === 'linkedin'  && <LinkedInPreview  text={editing ? draftText : currentText} imageUrl={imageUrl} handle={accounts.linkedin} />}
-              {tab === 'instagram' && <InstagramPreview caption={editing ? draftText : currentText} imageUrl={imageUrl} handle={accounts.instagram} />}
-              {tab === 'twitter'   && <XPreview         text={editing ? draftText : currentText} imageUrl={imageUrl} handle={accounts.twitter} />}
+              {tab === 'linkedin'  && <LinkedInPreview  text={previewText} imageUrl={previewImageUrl} handle={accounts.linkedin} />}
+              {tab === 'instagram' && <InstagramPreview caption={previewText} imageUrl={previewImageUrl} handle={accounts.instagram} />}
+              {tab === 'twitter'   && <XPreview         text={previewText} imageUrl={previewImageUrl} handle={accounts.twitter} />}
             </div>
 
             {tab === 'twitter' && (
@@ -782,8 +999,7 @@ function VideoPreview({ status, url }) {
   )
 }
 
-function CarouselStrip({ slides }) {
-  const [active, setActive] = useState(0)
+function CarouselStrip({ slides, active, onActiveChange }) {
   const sorted = [...slides].sort((a, b) => a.slide_number - b.slide_number)
 
   return (
@@ -795,7 +1011,7 @@ function CarouselStrip({ slides }) {
         {sorted.map((slide, i) => (
           <div
             key={slide.slide_number}
-            onClick={() => setActive(i)}
+            onClick={() => onActiveChange(i)}
             style={{
               flexShrink: 0, width: 130, scrollSnapAlign: 'start', cursor: 'pointer',
               border: active === i ? '2px solid var(--ink)' : '1px solid var(--fog-60)',
@@ -813,8 +1029,8 @@ function CarouselStrip({ slides }) {
           Slide {active + 1} of {sorted.length}
         </span>
         <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => setActive(a => Math.max(0, a - 1))} disabled={active === 0} style={navBtnStyle(active === 0)}>←</button>
-          <button onClick={() => setActive(a => Math.min(sorted.length - 1, a + 1))} disabled={active === sorted.length - 1} style={navBtnStyle(active === sorted.length - 1)}>→</button>
+          <button onClick={() => onActiveChange(Math.max(0, active - 1))} disabled={active === 0} style={navBtnStyle(active === 0)}>←</button>
+          <button onClick={() => onActiveChange(Math.min(sorted.length - 1, active + 1))} disabled={active === sorted.length - 1} style={navBtnStyle(active === sorted.length - 1)}>→</button>
         </div>
       </div>
 
