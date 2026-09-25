@@ -6,10 +6,19 @@ import { supabase } from '../../../lib/supabase'
 import { Spinner, FadeImage, Toast, Skeleton } from '../../../components/ui'
 
 const TABS = [
-  { key: 'linkedin',  label: '🔵 LinkedIn',    field: 'linkedin_body_clean',  scheduledField: 'linkedin_scheduled_time',  charLimit: 1200 },
-  { key: 'instagram', label: '🟣 Instagram',   field: 'insta_caption_clean',  scheduledField: 'instagram_scheduled_time', charLimit: 2200 },
-  { key: 'twitter',   label: '⬛ X / Twitter',  field: 'twitter_hook_clean',   scheduledField: 'twitter_scheduled_time',   charLimit: 280  },
+  { key: 'linkedin',  label: '🔵 LinkedIn',    field: 'linkedin_body_clean',  scheduledField: 'linkedin_scheduled_time',  charLimit: 1200, platform: 'LinkedIn'  },
+  { key: 'instagram', label: '🟣 Instagram',   field: 'insta_caption_clean',  scheduledField: 'instagram_scheduled_time', charLimit: 2200, platform: 'Instagram' },
+  { key: 'twitter',   label: '⬛ X / Twitter',  field: 'twitter_hook_clean',   scheduledField: 'twitter_scheduled_time',   charLimit: 280,  platform: 'Twitter'   },
 ]
+
+// A post only ever carries content for the platforms it was actually
+// generated for (see n8n's Sanitize and Schedule step) — show only
+// those tabs instead of all three regardless of what was requested.
+function tabsForPost(post) {
+  const platforms = post?.platforms || ''
+  const filtered = TABS.filter(t => platforms.includes(t.platform))
+  return filtered.length ? filtered : TABS
+}
 
 function ReviewFlow() {
   const router       = useRouter()
@@ -148,7 +157,8 @@ function ReviewFlow() {
 
 // ── Post Card ─────────────────────────────────────────────────────────────
 function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highlighted = false, onUpdate, onRemove }) {
-  const [tab,          setTab]          = useState('linkedin')
+  const availableTabs = tabsForPost(post)
+  const [tab,          setTab]          = useState(availableTabs[0].key)
   const [editing,      setEditing]      = useState(false)
   const [draftText,    setDraftText]    = useState('')
   const [saving,       setSaving]       = useState(false)
@@ -166,7 +176,7 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
   const [imgQuery, setImgQuery] = useState(`${post.topic} technology leadership`)
   const fileInputRef = useRef(null)
 
-  const cfg         = TABS.find(t => t.key === tab)
+  const cfg         = availableTabs.find(t => t.key === tab) || availableTabs[0]
   const currentText = localPost[cfg.field] || ''
   const charCount   = editing ? draftText.length : currentText.length
   // image_1_view_url points at a Google Drive *webpage* (drive.google.com/file/d/.../view),
@@ -494,7 +504,7 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
 
             {/* Platform tabs */}
             <div style={{ display: 'flex', borderBottom: '1px solid var(--fog-60)', marginBottom: 14 }}>
-              {TABS.map(t => (
+              {availableTabs.map(t => (
                 <button key={t.key}
                   onClick={() => { setTab(t.key); setEditing(false) }}
                   style={{
