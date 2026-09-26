@@ -7,12 +7,13 @@ export default async function DashboardLayout({ children }) {
   const supabase = await createSupabaseServerClient()
   const { data: { session } } = await supabase.auth.getSession()
 
-  const [{ count: pendingCount }, notifications] = await Promise.all([
+  const [{ count: pendingCount }, notifications, { data: client }] = await Promise.all([
     supabase
       .from('posts')
       .select('id', { count: 'exact', head: true })
       .eq('posting_status', 'AWAITING_APPROVAL'),
     getNotifications(supabase),
+    session ? supabase.from('clients').select('is_admin').eq('id', session.user.id).maybeSingle() : { data: null },
   ])
 
   return (
@@ -21,6 +22,7 @@ export default async function DashboardLayout({ children }) {
         userEmail={session?.user?.email}
         pendingCount={pendingCount || 0}
         notificationCount={notifications.length}
+        isAdmin={!!client?.is_admin}
       />
       <main style={{
         flex: 1,

@@ -61,6 +61,15 @@ export async function POST(request) {
     }
 
     // ── Batch usage limit check — each group counts as one post ─────────
+    // Admins are exempt: they're testing/operating the system, not a
+    // metered customer, and shouldn't be able to lock themselves out.
+    const { data: clientRow } = await supabaseAdmin
+      .from('clients')
+      .select('is_admin')
+      .eq('id', userId)
+      .maybeSingle()
+    const isAdmin = !!clientRow?.is_admin
+
     const { data: subRow } = await supabaseAdmin
       .from('subscriptions')
       .select('posts_used, posts_limit, status')
@@ -68,16 +77,18 @@ export async function POST(request) {
       .maybeSingle()
     const sub = subRow || { posts_used: 0, posts_limit: 5, status: 'trialing' }
 
-    if (sub.status === 'canceled') {
-      return NextResponse.json({ error: 'Your subscription has been cancelled. Please resubscribe to continue.', code: 'SUBSCRIPTION_CANCELED' }, { status: 403 })
-    }
-    if (sub.posts_used + groups.length > sub.posts_limit) {
-      return NextResponse.json({
-        error: `This needs ${groups.length} post${groups.length === 1 ? '' : 's'}, but you only have ${sub.posts_limit - sub.posts_used} remaining this month.`,
-        code:  'LIMIT_REACHED',
-        posts_used:  sub.posts_used,
-        posts_limit: sub.posts_limit,
-      }, { status: 429 })
+    if (!isAdmin) {
+      if (sub.status === 'canceled') {
+        return NextResponse.json({ error: 'Your subscription has been cancelled. Please resubscribe to continue.', code: 'SUBSCRIPTION_CANCELED' }, { status: 403 })
+      }
+      if (sub.posts_used + groups.length > sub.posts_limit) {
+        return NextResponse.json({
+          error: `This needs ${groups.length} post${groups.length === 1 ? '' : 's'}, but you only have ${sub.posts_limit - sub.posts_used} remaining this month.`,
+          code:  'LIMIT_REACHED',
+          posts_used:  sub.posts_used,
+          posts_limit: sub.posts_limit,
+        }, { status: 429 })
+      }
     }
 
     // ── Fire one n8n call per group ───────────────────────────────────

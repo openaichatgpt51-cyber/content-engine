@@ -14,7 +14,7 @@ const NAV = [
   { href: '/dashboard/settings',     label: 'Settings',      icon: CogIcon },
 ]
 
-export default function Sidebar({ userEmail = '', pendingCount = 0, notificationCount = 0 }) {
+export default function Sidebar({ userEmail = '', pendingCount = 0, notificationCount = 0, isAdmin = false }) {
   const pathname = usePathname()
   const router   = useRouter()
   const badgeCounts = { pending: pendingCount, notifications: notificationCount }
@@ -92,8 +92,23 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
         })}
       </nav>
 
-      {/* Usage */}
-      <UsageMeter compact />
+      {/* Usage — hidden for admins, who aren't metered (see fix below) */}
+      {!isAdmin && <UsageMeter compact />}
+
+      {isAdmin && (
+        <div style={{ padding: '0 12px 8px' }}>
+          <Link href="/admin" className={`nav-item${pathname.startsWith('/admin') ? ' nav-item--active' : ''}`} style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+            borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.12)',
+            color: pathname.startsWith('/admin') ? 'var(--white)' : 'rgba(255,255,255,0.55)',
+            background: pathname.startsWith('/admin') ? 'rgba(255,255,255,0.08)' : 'transparent',
+            fontSize: '0.875rem', fontWeight: 500,
+          }}>
+            <ShieldIcon size={16} />
+            Admin
+          </Link>
+        </div>
+      )}
 
       {/* Signed in as */}
       {userEmail && (
@@ -154,4 +169,7 @@ function BellIcon({ size = 16 }) {
 }
 function LogOutIcon({ size = 16 }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+}
+function ShieldIcon({ size = 16 }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 4 5v6c0 5.25 3.4 9.74 8 11 4.6-1.26 8-5.75 8-11V5l-8-3z"/></svg>
 }
