@@ -356,6 +356,23 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
       return
     }
 
+    // Feed the final, post-edit copy back in as a style example for future
+    // generations (see Fetch Approved Examples in the n8n workflow) — only
+    // approved content counts, since a draft that got edited or rejected
+    // isn't a signal of what this client actually wants to sound like.
+    const examples = [
+      { platform: 'LinkedIn',   text: localPost.linkedin_body_clean },
+      { platform: 'Instagram',  text: localPost.insta_caption_clean },
+      { platform: 'Twitter',    text: localPost.twitter_hook_clean },
+    ].filter(e => e.text && e.text.trim())
+
+    if (examples.length) {
+      const { error: exErr } = await supabase.from('approved_examples').insert(
+        examples.map(e => ({ client_id: localPost.client_id, platform: e.platform, text: e.text }))
+      )
+      if (exErr) console.error('Failed to save approved example:', exErr.message)
+    }
+
     showMsg(postingPaused ? 'Approved — held until you resume posting' : 'Post approved and scheduled')
     setLeaving(true)
     setTimeout(() => onRemove(), 1200)
@@ -557,6 +574,8 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
             {/* Image / video / carousel display */}
             {localPost.is_video ? (
               <VideoPreview status={localPost.video_status} url={localPost.video_url} />
+            ) : localPost.carousel_status === 'generating' ? (
+              <CarouselLoadingSpinner />
             ) : isCarouselPost ? (
               <div style={{ marginBottom: 16 }}>
                 <CarouselStrip slides={sortedSlides} active={carouselActive} onActiveChange={selectSlide} />
@@ -994,6 +1013,28 @@ function VideoPreview({ status, url }) {
       </p>
       <p style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 4 }}>
         Usually ready in a few minutes — refresh this page to check.
+      </p>
+    </div>
+  )
+}
+
+// Mirrors VideoPreview's 'generating' state — same visual language, so a
+// client sees a consistent "still working" pattern regardless of format.
+// Slides are typically done well within the 8s background poll interval
+// in ReviewFlow, so no separate polling needed here; the next silent
+// refresh picks it up once carousel_status flips to 'ready'.
+function CarouselLoadingSpinner() {
+  return (
+    <div style={{
+      marginBottom: 16, padding: '32px', textAlign: 'center', borderRadius: 'var(--radius)',
+      background: 'var(--fog)', border: '1px solid var(--fog-60)',
+    }}>
+      <div className="pop-in" style={{ fontSize: '1.5rem', marginBottom: 6 }}>🖼️</div>
+      <p style={{ fontSize: '0.8125rem', color: 'var(--ink-40)', fontWeight: 500 }}>
+        Generating carousel slides…
+      </p>
+      <p style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 4 }}>
+        This page updates automatically once they're ready.
       </p>
     </div>
   )

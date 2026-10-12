@@ -91,13 +91,20 @@ export async function POST(request) {
       }
     }
 
-    // ── Fire one n8n call per group ───────────────────────────────────
+    // ── Fire one n8n call per group, in parallel ─────────────────────────
+    // These used to run sequentially, so a 2-group submission (e.g. one
+    // platform set to video, another to carousel) waited on both n8n round
+    // trips back to back before the user saw anything. n8n's webhook
+    // already responds as soon as the post row is saved (well before
+    // carousel/video finish generating in the background), so the actual
+    // wait here is already fairly short per call — running them in
+    // parallel means a multi-group submission now takes as long as the
+    // slowest single group, not the sum of all of them.
     const n8nUrl    = process.env.N8N_WEBHOOK_URL
     const n8nSecret = process.env.N8N_WEBHOOK_SECRET
     if (!n8nUrl) return NextResponse.json({ error: 'n8n webhook URL not configured' }, { status: 500 })
 
-    const results = []
-    for (const g of groups) {
+    const results = await Promise.all(groups.map(async (g) => {
       try {
         const n8nRes = await fetch(n8nUrl, {
           method: 'POST',
@@ -118,16 +125,16 @@ export async function POST(request) {
         })
 
         if (n8nRes.ok) {
-          results.push({ platforms: g.platforms, status: 'generated' })
           if (subRow) await supabaseAdmin.rpc('increment_post_count', { p_client_id: userId })
+          return { platforms: g.platforms, status: 'generated' }
         } else {
           const text = await n8nRes.text().catch(() => '')
-          results.push({ platforms: g.platforms, status: 'failed', error: `${n8nRes.status} ${text}` })
+          return { platforms: g.platforms, status: 'failed', error: `${n8nRes.status} ${text}` }
         }
       } catch (err) {
-        results.push({ platforms: g.platforms, status: err.name === 'TimeoutError' ? 'timeout' : 'failed', error: err.message })
+        return { platforms: g.platforms, status: err.name === 'TimeoutError' ? 'timeout' : 'failed', error: err.message }
       }
-    }
+    }))
 
     const succeeded = results.filter(r => r.status === 'generated').length
     if (succeeded === 0) {

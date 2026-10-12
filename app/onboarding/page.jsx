@@ -39,7 +39,12 @@ function OnboardingFlow() {
       supabase.from('onboarding').select('*').eq('client_id', user.id).maybeSingle().then(({ data }) => {
         if (data?.completed) { router.push('/dashboard'); return }
         if (data) {
-          setStep(data.step || 1)
+          // Prefer the URL's step (present when returning from an OAuth
+          // redirect) over the stored one if it's ahead — belt-and-braces
+          // in case the save-before-redirect above ever fails to land;
+          // never regress the user to an earlier step than where the
+          // redirect says they should be.
+          setStep(Math.max(data.step || 1, initialStep))
           if (data.company_name) setCompany({ name: data.company_name, industry: data.industry || '', website: data.website || '' })
           if (data.posting_days) setSchedule({ days: data.posting_days, time: data.posting_time || '09:00', timezone: data.timezone || 'Africa/Lagos' })
         }
@@ -65,7 +70,13 @@ function OnboardingFlow() {
     setSaving(false); setStep(2)
   }
 
-  function handleConnectPlatform(platform) {
+  async function handleConnectPlatform(platform) {
+    // Must save BEFORE navigating away — window.location.href is a full
+    // page unload, so nothing after it runs. Without this, the step
+    // stored in the database stays stale while the user is off in the
+    // OAuth flow, and the restore effect below would snap them back to
+    // an earlier step on return.
+    await saveStep({ step: step + 1 })
     window.location.href = `/api/auth/${platform}?redirect=/onboarding?step=${step + 1}`
   }
 
