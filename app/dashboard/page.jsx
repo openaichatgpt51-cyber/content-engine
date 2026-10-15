@@ -71,6 +71,7 @@ function DashboardFlow() {
   const [dragPost,    setDragPost]    = useState(null) // post currently being dragged
   const [dragOverKey,  setDragOverKey]  = useState(null) // date key of the cell currently under the drag
   const [toast,        setToast]        = useState(null)
+  const [retrying,     setRetrying]     = useState(false) // a FAILED post is being re-queued
 
   useEffect(() => {
     async function load() {
@@ -154,6 +155,59 @@ function DashboardFlow() {
   function showToast(msg, type = 'success') {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
+  }
+
+  // ── Retry a FAILED post ─────────────────────────────────────────────────
+  // Puts the post back in the queue the scheduler polls. Respects the kill
+  // switch the same way Approve does: if posting is paused, it goes to HALTED
+  // and waits for Resume instead of publishing. The status check on the update
+  // means it only ever touches a post that is still FAILED.
+  async function handleRetry(post) {
+    if (retrying) return
+    const ok = window.confirm(
+      'Re-queue this post for publishing?\n\n' +
+      'If it may already be live on the platform, check there first — retrying could publish it twice.'
+    )
+    if (!ok) return
+
+    setRetrying(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setRetrying(false)
+      showToast('You must be logged in to retry', 'error')
+      return
+    }
+
+    const { data: settings } = await supabase
+      .from('account_settings')
+      .select('posting_paused')
+      .eq('client_id', user.id)
+      .maybeSingle()
+    const nextStatus = settings?.posting_paused ? 'HALTED' : 'PENDING'
+
+    const { data: updated, error } = await supabase
+      .from('posts')
+      .update({ posting_status: nextStatus })
+      .eq('id', post.id)
+      .eq('posting_status', 'FAILED')
+      .select('id')
+
+    setRetrying(false)
+
+    if (error) {
+      showToast('Failed to retry — ' + error.message, 'error')
+      return
+    }
+    if (!updated || updated.length === 0) {
+      showToast('This post is no longer in a failed state', 'error')
+      return
+    }
+
+    setPosts(ps => ps.map(p => p.id === post.id ? { ...p, posting_status: nextStatus } : p))
+    setSelected(sel => sel && sel.id === post.id ? { ...sel, posting_status: nextStatus } : sel)
+    showToast(nextStatus === 'HALTED'
+      ? 'Re-queued — held until you resume posting'
+      : 'Re-queued — it will be picked up on the next run')
   }
 
   // ── Drag and drop rescheduling ──────────────────────────────────────────
@@ -658,6 +712,27 @@ function DashboardFlow() {
                 }}>
                   Open in Review
                 </Link>
+              ) : selected.posting_status === 'FAILED' ? (
+                <button
+                  onClick={() => handleRetry(selected)}
+                  disabled={retrying}
+                  className="press hover-lift"
+                  style={{
+                    flex: 1,
+                    padding: '10px 0',
+                    background: 'var(--ink)',
+                    color: 'var(--white)',
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.875rem',
+                    fontWeight: 500,
+                    cursor: retrying ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  }}
+                >
+                  {retrying && <Spinner size={14} light />}
+                  Retry publishing
+                </button>
               ) : (
                 // Review Queue only ever loads AWAITING_APPROVAL posts — linking
                 // there for any other status is a dead end (nothing to scroll
