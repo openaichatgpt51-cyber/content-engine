@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { PLANS } from '../../lib/plans'
 import { Spinner } from '../../components/ui'
+import { detectTimeZone, timeZoneOptions } from '../../lib/locales'
 
 const STEPS = [
   { number: 1, label: 'Company'   },
@@ -14,7 +15,7 @@ const STEPS = [
 ]
 
 const DAYS      = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
-const TIMEZONES = ['Africa/Lagos','Europe/London','America/New_York','America/Los_Angeles','Asia/Dubai','Asia/Singapore']
+const TIMEZONES = timeZoneOptions() // every timezone the browser knows
 const INDUSTRIES = ['Technology','Finance','Healthcare','Marketing','Consulting','Education','Legal','Manufacturing','Retail','Other']
 
 function OnboardingFlow() {
@@ -28,8 +29,14 @@ function OnboardingFlow() {
   const [userId,  setUserId]  = useState(null)
 
   const [company, setCompany] = useState({ name: '', industry: '', website: '' })
-  const [schedule, setSchedule] = useState({ days: ['Monday','Wednesday','Friday'], time: '09:00', timezone: 'Africa/Lagos' })
+  const [schedule, setSchedule] = useState({ days: ['Monday','Wednesday','Friday'], time: '09:00', timezone: 'UTC' })
   const [selectedPlan, setSelectedPlan] = useState('starter')
+
+  // New users start from their browser's own timezone, not a fixed default.
+  // (A saved value, loaded below, replaces this.)
+  useEffect(() => {
+    setSchedule(s => s.timezone === 'UTC' ? { ...s, timezone: detectTimeZone() } : s)
+  }, [])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -46,7 +53,7 @@ function OnboardingFlow() {
           // redirect says they should be.
           setStep(Math.max(data.step || 1, initialStep))
           if (data.company_name) setCompany({ name: data.company_name, industry: data.industry || '', website: data.website || '' })
-          if (data.posting_days) setSchedule({ days: data.posting_days, time: data.posting_time || '09:00', timezone: data.timezone || 'Africa/Lagos' })
+          if (data.posting_days) setSchedule({ days: data.posting_days, time: data.posting_time || '09:00', timezone: data.timezone || detectTimeZone() })
         }
       })
     })

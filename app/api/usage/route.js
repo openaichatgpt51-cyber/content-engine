@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
+import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
 
 // GET — return current usage for the logged-in user
 export async function GET() {
@@ -29,7 +30,7 @@ export async function GET() {
     }
 
     const posts_remaining = Math.max(0, sub.posts_limit - sub.posts_used)
-    const can_generate    = sub.status !== 'canceled' && posts_remaining > 0
+    const can_generate    = sub.status !== 'canceled' && (!USAGE_LIMITS_ENABLED || posts_remaining > 0)
 
     return NextResponse.json({
       ...sub,
@@ -51,6 +52,9 @@ export async function POST() {
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
     const userId = session.user.id
+
+    // Usage counting is switched off for now (see lib/featureFlags.js).
+    if (!USAGE_LIMITS_ENABLED) return NextResponse.json({ success: true, counted: false })
 
     // Check current usage first
     const { data: sub } = await supabaseAdmin

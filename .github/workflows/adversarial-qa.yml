@@ -1,0 +1,113 @@
+# .github/workflows/adversarial-qa.yml
+#
+# Runs the adversarial QA agent on every PR. Two jobs:
+#   1. existing-suite   - runs your current test suite first, so "no
+#                          regressions" is verified by CI itself, not
+#                          claimed by the agent.
+#   2. adversarial-qa   - runs Claude Code with the adversarial QA
+#                          prompt against the diff, writes/runs new
+#                          tests, and appends any bugs found to the
+#                          known-break-patterns log.
+#
+# Requires:
+#   - ANTHROPIC_API_KEY stored as a repo secret
+#   - docs/qa/adversarial-testing-prompt.md  (the prompt itself)
+#   - docs/qa/known-break-patterns.md        (running bug log, can
+#                                              start empty)
+#
+# Fill in the placeholder test command on the line marked below.
+
+name: Adversarial QA
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write        # needed if the agent commits new tests/log entries
+  pull-requests: write    # needed if the agent posts its test plan as a comment
+
+jobs:
+  existing-suite:
+    name: Run existing test suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- replace with your actual setup + test command ---
+      - name: Install dependencies
+        run: npm ci   # or: pip install -r requirements.txt, etc.
+
+      - name: Run existing suite
+        run: npm test -- --ci   # or: pytest, etc.
+      # -------------------------------------------------------
+
+  adversarial-qa:
+    name: Adversarial QA agent
+    needs: existing-suite   # only runs if the existing suite is green
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute PR diff
+        run: |
+          git diff origin/${{ github.base_ref }}...HEAD > pr.diff
+
+      - name: Run adversarial QA agent
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Read docs/qa/adversarial-testing-prompt.md and follow it exactly.
+
+            Context for this run:
+            - The diff to test is in pr.diff at the repo root.
+            - The running bug log is docs/qa/known-break-patterns.md —
+              read it first and check this diff against every known
+              pattern before doing anything else.
+            - The existing test suite already passed in a separate CI
+              job before this one ran, so focus on: (a) new tests for
+              this diff across every dimension in the prompt, and
+              (b) any bug you find, with a regression test that closes it.
+
+            When you find a bug: append it to
+            docs/qa/known-break-patterns.md with root cause + severity,
+            add the regression test, and post a summary as a PR comment.
+
+            If you find no bugs, post a one-line PR comment confirming
+            what was tested and that the diff is clean.
+          claude_args: |
+            --max-turns 30
+            --model claude-sonnet-5
+            --allowedTools "Bash,Edit,Read,Write"
+
+      - name: Re-run full suite after agent's changes
+        run: npm test -- --ci   # confirms the agent's own new tests pass too
+
+  # Optional second pass: a fresh, separate context that only sees the
+  # diff (not the builder's own tests or reasoning), for high-stakes
+  # changes (auth, tenant isolation, payments). Uncomment and gate this
+  # to specific paths if you want it running on every PR that touches
+  # those areas.
+  #
+  # adversarial-second-pass:
+  #   name: Fresh adversarial pass (high-stakes paths only)
+  #   needs: existing-suite
+  #   if: contains(github.event.pull_request.changed_files, 'auth/') # example filter
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #     - run: git diff origin/${{ github.base_ref }}...HEAD > pr.diff
+  #     - uses: anthropics/claude-code-base-action@beta
+  #       with:
+  #         anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+  #         prompt: |
+  #           You have NOT seen this PR's own tests or commit messages.
+  #           Attack pr.diff fresh using docs/qa/adversarial-testing-prompt.md.
+  #           Report findings only — do not modify files.

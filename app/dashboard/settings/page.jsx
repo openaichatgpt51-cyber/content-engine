@@ -6,6 +6,7 @@ import { Spinner, Skeleton } from '../../../components/ui'
 import KillSwitch from '../../../components/KillSwitch'
 import UsageMeter from '../../../components/UsageMeter'
 import { PLANS } from '../../../lib/plans'
+import { COUNTRIES, LANGUAGES, countryByCode, detectTimeZone, timeZoneOptions } from '../../../lib/locales'
 
 const PLATFORMS = [
   {
@@ -52,7 +53,10 @@ function SettingsFlow() {
     tone:                'Professional',
     topics_to_avoid:     '',
     example_posts:       ['', '', ''],
+    country:             '',
+    language:            '',
   })
+  const [saveError,    setSaveError]  = useState('')
   const [saving,       setSaving]     = useState(false)
   const [saved,        setSaved]      = useState(false)
   const [loadingConns, setLoadingConns] = useState(true)
@@ -63,7 +67,7 @@ function SettingsFlow() {
     LinkedIn:  { days: [], time: '09:00' },
     Instagram: { days: [], time: '09:00' },
     Twitter:   { days: [], time: '09:00' },
-    timezone:  'Africa/Lagos',
+    timezone:  'UTC', // replaced by the saved value, or the browser's own timezone, on load
   })
   const [brandImages, setBrandImages] = useState([])           // uploaded URLs
   const [visualStyle, setVisualStyle] = useState('')           // analyzed description
@@ -241,7 +245,7 @@ function SettingsFlow() {
           days: onboarding.twitter_posting_days || onboarding.posting_days || [],
           time: onboarding.twitter_posting_time || onboarding.posting_time || '09:00',
         },
-        timezone: onboarding.timezone || 'Africa/Lagos',
+        timezone: onboarding.timezone || detectTimeZone(),
       })
     }
 
@@ -259,6 +263,8 @@ function SettingsFlow() {
         tone:                profile.tone                || 'Professional',
         topics_to_avoid:     profile.topics_to_avoid     || '',
         example_posts:       profile.example_posts?.length ? profile.example_posts : ['', '', ''],
+        country:             profile.country  || '',
+        language:            profile.language || '',
       })
       setBrandImages(profile.brand_image_urls || [])
       setVisualStyle(profile.visual_style_description || '')
@@ -280,14 +286,22 @@ function SettingsFlow() {
       tone:                brand.tone,
       topics_to_avoid:     brand.topics_to_avoid,
       example_posts:       brand.example_posts.filter(Boolean),
+      country:             brand.country  || null,
+      language:            brand.language || null,
       updated_at:          new Date().toISOString(),
     }
 
-    await supabase
+    setSaveError('')
+    const { error: saveErr } = await supabase
       .from('brand_profiles')
       .upsert(payload, { onConflict: 'client_id' })
 
     setSaving(false)
+    if (saveErr) {
+      console.error('Brand profile save failed:', saveErr.message)
+      setSaveError("Couldn't save — " + saveErr.message)
+      return
+    }
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
@@ -560,6 +574,33 @@ function SettingsFlow() {
             />
           </BrandSection>
 
+          <BrandSection label="Country & Language" hint="Where your audience is, and the language your posts are written in. Used to localise research, writing and image choices." index={2}>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <select
+                value={brand.country}
+                onChange={e => {
+                  const code = e.target.value
+                  updateBrand('country', code)
+                  // Suggest the country's usual language if none is chosen yet.
+                  const c = countryByCode(code)
+                  if (c && !brand.language) updateBrand('language', c.language)
+                }}
+                style={selectStyle}
+              >
+                <option value="">Country…</option>
+                {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+              </select>
+              <select
+                value={brand.language}
+                onChange={e => updateBrand('language', e.target.value)}
+                style={selectStyle}
+              >
+                <option value="">Language…</option>
+                {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
+              </select>
+            </div>
+          </BrandSection>
+
           <BrandSection label="Default Tone" hint="Your preferred writing style across all platforms" index={2}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {TONES.map(t => (
@@ -704,6 +745,10 @@ function SettingsFlow() {
                 ✓ Saved successfully
               </span>
             )}
+
+            {saveError && (
+              <span style={{ fontSize: '0.8125rem', color: 'var(--failed)' }}>{saveError}</span>
+            )}
           </div>
         </form>
       )}
@@ -786,7 +831,7 @@ function SettingsFlow() {
               onChange={e => setSchedule(s => ({ ...s, timezone: e.target.value }))}
               style={{ padding: '9px 12px', border: '1.5px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', width: '100%' }}
             >
-              {['Africa/Lagos','Europe/London','America/New_York','America/Los_Angeles','Asia/Dubai','Asia/Singapore'].map(tz => (
+              {timeZoneOptions(schedule.timezone).map(tz => (
                 <option key={tz} value={tz}>{tz}</option>
               ))}
             </select>
@@ -940,6 +985,18 @@ function BrandSection({ label, hint, children, index = 0 }) {
       {children}
     </div>
   )
+}
+
+const selectStyle = {
+  padding: '10px 12px',
+  background: 'var(--fog)',
+  border: '1.5px solid var(--fog-60)',
+  borderRadius: 'var(--radius)',
+  fontSize: '0.875rem',
+  color: 'var(--ink)',
+  fontFamily: 'var(--font-body)',
+  minWidth: 220,
+  flex: 1,
 }
 
 const textareaStyle = {

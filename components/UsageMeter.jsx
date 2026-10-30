@@ -3,8 +3,15 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useUsage } from '../lib/useUsage'
 import { Spinner, Skeleton } from './ui'
+import { USAGE_LIMITS_ENABLED } from '../lib/featureFlags'
 
-export default function UsageMeter({ compact = false }) {
+// Hidden (and no usage request made) while usage limits are switched off.
+export default function UsageMeter(props) {
+  if (!USAGE_LIMITS_ENABLED) return null
+  return <UsageMeterInner {...props} />
+}
+
+function UsageMeterInner({ compact = false }) {
   const { usage, loading } = useUsage()
   const [portalLoading, setPortalLoading] = useState(false)
 

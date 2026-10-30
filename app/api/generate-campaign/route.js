@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
+import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
+import { loadLocaleContext } from '../../../lib/locale-context'
 
 const N8N_WEBHOOK_URL    = process.env.N8N_WEBHOOK_URL
 const N8N_WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET
@@ -54,7 +56,8 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Your subscription has been cancelled.', code: 'SUBSCRIPTION_CANCELED' }, { status: 403 })
     }
     const remaining = sub.posts_limit - sub.posts_used
-    if (cleanGroups.length > remaining) {
+    // Monthly limit: switched off for now (see lib/featureFlags.js).
+    if (USAGE_LIMITS_ENABLED && cleanGroups.length > remaining) {
       return NextResponse.json({
         error: `This campaign needs ${cleanGroups.length} posts, but you only have ${remaining} remaining this month.`,
         code:  'LIMIT_REACHED',
@@ -65,6 +68,7 @@ export async function POST(request) {
     // Still sequential, still required — option B's collision-aware
     // scheduling only works if each post's slot is committed before the
     // next one checks for collisions. Unchanged from the original design.
+    const locale  = await loadLocaleContext(userId)
     const results = []
     for (const g of cleanGroups) {
       try {
@@ -82,14 +86,15 @@ export async function POST(request) {
             is_carousel:  !!g.isCarousel,
             slide_count:  g.isCarousel ? Math.max(2, Math.min(10, Number(g.slideCount) || 5)) : null,
             is_campaign:  true,
+            ...locale,
             client_id:    userId,
             client_email: session.user.email,
           }),
         })
 
         if (n8nRes.ok) {
+          // Usage is counted by n8n (Record Usage node) once the post is saved.
           results.push({ topic: g.topic, platforms: g.platforms, status: 'generated' })
-          await supabaseAdmin.rpc('increment_post_count', { p_client_id: userId })
         } else {
           const text = await n8nRes.text().catch(() => '')
           results.push({ topic: g.topic, platforms: g.platforms, status: 'failed', error: `${n8nRes.status} ${text}` })

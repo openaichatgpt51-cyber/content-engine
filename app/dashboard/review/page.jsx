@@ -31,13 +31,23 @@ function ReviewFlow() {
   const [postingPaused, setPostingPaused] = useState(false)
   const scrolledRef = useRef(false)
 
+  // Posts that were just submitted take ~2-3 minutes to appear. The New Post
+  // page leaves { expected, startedAt } in sessionStorage so this page can say
+  // so instead of showing an empty queue.
+  const [pendingGen, setPendingGen] = useState(null)
+  const [nowTick,    setNowTick]    = useState(() => Date.now())
+
   useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('ce_pending_gen')
+      if (raw) setPendingGen(JSON.parse(raw))
+    } catch {}
     loadPosts(); loadAccounts(); loadPauseState()
     // Carousel/video generation finishes seconds to minutes after a post
     // first appears (its row is inserted before generation completes) —
     // without this, a card can freeze showing the pre-generation state
     // until the next full page load.
-    const interval = setInterval(() => loadPosts({ silent: true }), 8000)
+    const interval = setInterval(() => { loadPosts({ silent: true }); setNowTick(Date.now()) }, 8000)
     return () => clearInterval(interval)
   }, [])
 
@@ -51,6 +61,18 @@ function ReviewFlow() {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   }, [targetPostId, loading, posts])
+
+  // Posts created since the submission (5s of slack for clock differences).
+  const arrivedCount = pendingGen
+    ? posts.filter(p => new Date(p.created_at).getTime() >= pendingGen.startedAt - 5000).length
+    : 0
+
+  useEffect(() => {
+    if (pendingGen && arrivedCount >= pendingGen.expected) {
+      try { sessionStorage.removeItem('ce_pending_gen') } catch {}
+      setPendingGen(null)
+    }
+  }, [pendingGen, arrivedCount])
 
   async function loadAccounts() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -115,6 +137,11 @@ function ReviewFlow() {
 
   if (loading) return <LoadingSkeleton />
 
+  const waitingFor  = pendingGen ? Math.max(0, pendingGen.expected - arrivedCount) : 0
+  const elapsedMin  = pendingGen ? (nowTick - pendingGen.startedAt) / 60000 : 0
+  const generating  = waitingFor > 0 && elapsedMin < 8
+  const overdue     = waitingFor > 0 && elapsedMin >= 8
+
   return (
     <div style={{ padding: '32px 36px', flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32 }}>
@@ -143,7 +170,32 @@ function ReviewFlow() {
         </div>
       )}
 
-      {posts.length === 0 ? <EmptyState /> : (
+      {generating && (
+        <div className="animate-in" style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '12px 18px', marginBottom: 24,
+          background: 'var(--fog)', border: '1px solid var(--fog-60)',
+          borderRadius: 'var(--radius)', fontSize: '0.85rem', color: 'var(--ink)',
+        }}>
+          ⏳ Generating {waitingFor} post{waitingFor === 1 ? '' : 's'} — this usually takes 2–3 minutes.
+          {' '}{waitingFor === 1 ? 'It' : 'They'} will appear here automatically; you can leave this page open.
+        </div>
+      )}
+
+      {overdue && (
+        <div className="animate-in" style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '12px 18px', marginBottom: 24,
+          background: 'var(--failed-bg)', border: '1px solid var(--failed-border)',
+          borderRadius: 'var(--radius)', fontSize: '0.85rem', color: 'var(--failed)',
+        }}>
+          This is taking longer than usual. If {waitingFor === 1 ? 'your post' : 'your posts'} still {waitingFor === 1 ? "hasn't" : "haven't"} appeared shortly, check{' '}
+          <Link href="/dashboard/notifications" style={{ fontWeight: 600, textDecoration: 'underline' }}>Notifications</Link>{' '}
+          for an error, then try again. You were not charged for a run that failed.
+        </div>
+      )}
+
+      {posts.length === 0 && !generating ? <EmptyState /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
           {posts.map((post, i) => (
             <PostCard
@@ -161,6 +213,13 @@ function ReviewFlow() {
       )}
     </div>
   )
+}
+
+// Turns the short description in the image box into a prompt that keeps AI
+// images consistent with the stock-photo look and free of baked-in text.
+function buildAiImagePrompt(text) {
+  return `Professional editorial photograph illustrating: ${String(text || '').trim()}. ` +
+    'Clean, modern business setting, natural lighting, realistic. No text, no logos, no watermarks.'
 }
 
 // ── Post Card ─────────────────────────────────────────────────────────────
@@ -181,7 +240,7 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
   // uses (see "Prepare Image Prompts" — topic + a business-context phrase)
   // instead of sending the bare topic, which Pixabay tends to match too
   // loosely on its own. Editable so a bad default doesn't dead-end you.
-  const [imgQuery, setImgQuery] = useState(`${post.topic} technology leadership`)
+  const [imgQuery, setImgQuery] = useState(post.topic || '')
   const fileInputRef = useRef(null)
 
   // Carousel per-slide editing state
@@ -293,6 +352,23 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Regeneration failed')
+      await saveSlideImageUrl(body.imageUrl)
+    } catch (err) {
+      setSlideImgBusy(false)
+      showMsg(err.message, 'error')
+    }
+  }
+
+  async function generateAiSlideImage() {
+    setSlideImgBusy(true)
+    try {
+      const res = await fetch('/api/generate-ai-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: buildAiImagePrompt(slideImgQuery) }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.error || 'AI image generation failed')
       await saveSlideImageUrl(body.imageUrl)
     } catch (err) {
       setSlideImgBusy(false)
@@ -486,6 +562,25 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
     }
   }
 
+  // Generates a brand-new image with AI (instead of searching stock photos).
+  // Limited per user per day on the server because each image costs money.
+  async function generateAiImage() {
+    setImgBusy(true)
+    try {
+      const res = await fetch('/api/generate-ai-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: buildAiImagePrompt(imgQuery) }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.error || 'AI image generation failed')
+      await saveImageUrl(body.imageUrl)
+    } catch (err) {
+      setImgBusy(false)
+      showMsg(err.message, 'error')
+    }
+  }
+
   async function uploadImage(file) {
     if (!file) return
     setImgBusy(true)
@@ -650,6 +745,13 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
                         📤 Upload
                       </button>
                     </div>
+                    <button
+                      onClick={generateAiSlideImage}
+                      disabled={slideImgBusy || !slideImgQuery.trim()}
+                      style={{ width: '100%', marginTop: 8, padding: '8px 0', fontSize: '0.8125rem', fontWeight: 500, background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', cursor: slideImgBusy ? 'default' : 'pointer' }}
+                    >
+                      {slideImgBusy ? 'Working…' : '✨ Generate with AI'}
+                    </button>
                     <input
                       ref={slideFileInputRef}
                       type="file"
@@ -726,6 +828,20 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
                       📤 Upload
                     </button>
                     </div>
+                    <button
+                      onClick={generateAiImage}
+                      disabled={imgBusy || !imgQuery.trim()}
+                      style={{
+                        width: '100%', marginTop: 8, padding: '8px 0', fontSize: '0.8125rem', fontWeight: 500,
+                        background: 'var(--white)', border: '1px solid var(--fog-60)',
+                        borderRadius: 'var(--radius-sm)', cursor: imgBusy ? 'default' : 'pointer',
+                      }}
+                    >
+                      {imgBusy ? 'Working…' : '✨ Generate with AI'}
+                    </button>
+                    <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: 'var(--ink-20)' }}>
+                      Creates a new image from your description. Limited per day.
+                    </p>
                     <input
                       ref={fileInputRef}
                       type="file"

@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Spinner } from '../../../components/ui'
 import { supabase } from '../../../lib/supabase'
+import ImageUploadField from '../../../components/ImageUploadField'
+import OwnPostForm from './OwnPostForm'
 
 const TONES = [
   { value: 'professional', label: 'Professional' },
@@ -33,6 +35,11 @@ export default function NewPostPage() {
   const [content, setContent] = useState({
     LinkedIn: emptyContent(), Instagram: emptyContent(), Twitter: emptyContent(),
   })
+
+  // 'ai' = AI writes it; 'own' = the user supplies the text (no AI at all).
+  const [mode,          setMode]          = useState('ai')
+  // An image the user uploaded themselves: n8n then skips image generation.
+  const [providedImage, setProvidedImage] = useState(null)
 
   const [brandVoice, setBrandVoice]   = useState('')
   const [loading,     setLoading]     = useState(false)
@@ -93,6 +100,12 @@ export default function NewPostPage() {
       }
     }
 
+    for (const key of activePlatforms) {
+      if (key === 'Instagram' && effective(key).format === 'text' && !providedImage) {
+        return setError('Instagram posts need an image — pick an image format or upload your own')
+      }
+    }
+
     setLoading(true)
     setError('')
     setErrorCode(null)
@@ -115,6 +128,9 @@ export default function NewPostPage() {
           is_carousel: c.format === 'carousel',
           slide_count: c.format === 'carousel' ? c.slideCount : null,
           is_video:    c.format === 'video',
+          // 'Text only', or a single post with the user's own image: n8n skips image work.
+          skip_media:         c.format === 'text' || (c.format === 'single' && !!providedImage),
+          provided_image_url: c.format === 'single' && providedImage ? providedImage.url : '',
         }
       }
 
@@ -137,6 +153,16 @@ export default function NewPostPage() {
         throw new Error(body.error || `Request failed (${res.status})`)
       }
 
+      // The posts take ~2-3 minutes to arrive; tell the Review Queue how many
+      // to expect so it can show a "Generating..." banner meanwhile.
+      const started = await res.json().catch(() => ({}))
+      try {
+        sessionStorage.setItem('ce_pending_gen', JSON.stringify({
+          expected: Number(started.generated) || 1,
+          startedAt: Date.now(),
+        }))
+      } catch {}
+
       setProgress(100)
       setTimeout(() => router.push('/dashboard/review'), 400)
     } catch (err) {
@@ -150,10 +176,31 @@ export default function NewPostPage() {
   return (
     <div style={{ padding: '32px 40px', maxWidth: 720 }}>
       <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: 4 }}>New Post</h1>
-      <p style={{ color: 'var(--ink-20)', fontSize: '0.875rem', marginBottom: 28 }}>
-        Each platform can have its own topic, tone, and format — or just copy LinkedIn.
+      <p style={{ color: 'var(--ink-20)', fontSize: '0.875rem', marginBottom: 20 }}>
+        {mode === 'ai'
+          ? 'Each platform can have its own topic, tone, and format — or just copy LinkedIn.'
+          : 'Write or paste your own post. Nothing is generated — it goes straight to your review queue.'}
       </p>
 
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+        {[
+          { value: 'ai',  label: '✨ Generate with AI' },
+          { value: 'own', label: '✍️ Write it myself' },
+        ].map(m => (
+          <button key={m.value} type="button" onClick={() => { setMode(m.value); setError('') }} style={{
+            padding: '8px 16px', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 500,
+            border: `1.5px solid ${mode === m.value ? 'var(--ink)' : 'var(--fog-60)'}`,
+            background: mode === m.value ? 'var(--ink)' : 'var(--white)',
+            color: mode === m.value ? 'var(--white)' : 'var(--ink-40)', cursor: 'pointer',
+          }}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'own' && <OwnPostForm />}
+
+      {mode === 'ai' && (
       <form onSubmit={handleSubmit}>
         {PLATFORMS.map((p, idx) => {
           const isSource = p.key === 'LinkedIn'
@@ -235,6 +282,7 @@ export default function NewPostPage() {
 
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     {[
+                      { value: 'text',     label: 'Text only' },
                       { value: 'single',   label: 'Single image' },
                       { value: 'carousel', label: 'Carousel' },
                       { value: 'video',    label: 'Video (beta)' },
@@ -270,6 +318,14 @@ export default function NewPostPage() {
             </div>
           )
         })}
+
+        <ImageUploadField
+          value={providedImage}
+          onChange={setProvidedImage}
+          disabled={loading}
+          label="Use my own image instead of generating one (optional)"
+          hint="Applies to 'Single image' and 'Text only' posts — the AI then writes the text only. Carousels and videos still build their own visuals."
+        />
 
         {error && errorCode === 'LIMIT_REACHED' ? (
           <div className="animate-in" style={{
@@ -315,6 +371,7 @@ export default function NewPostPage() {
           {loading ? 'Generating…' : 'Generate posts'}
         </button>
       </form>
+      )}
     </div>
   )
 }

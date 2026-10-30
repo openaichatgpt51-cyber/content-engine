@@ -1,7 +1,18 @@
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
+import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
+import { loadLocaleContext } from '../../../lib/locale-context'
 
+// How long to wait for n8n before treating the job as "accepted and running".
+// A full generation takes ~2-3 minutes, so n8n does not answer within this
+// window; what we need from it is only (a) it received the request and
+// (b) any immediate rejection (bad secret, wrong URL, n8n down) is reported
+// here instead of being lost. n8n keeps running after we stop listening.
+const ACCEPT_WINDOW_MS = 10_000
+
+// Usage is NOT counted here. n8n counts it (Record Usage node) right after the
+// post row is saved, so a run that errors out is never charged to the user.
 export async function POST(request) {
   try {
     const supabase = await createSupabaseServerClient()
@@ -31,6 +42,7 @@ export async function POST(request) {
           topic: c.topic.trim(), tone: c.tone, is_carousel: !!c.is_carousel,
           slide_count: c.is_carousel ? c.slideCount ?? c.slide_count : null,
           is_video: !!c.is_video,
+          skip_media: !!c.skip_media, provided_image_url: c.provided_image_url || '',
         })
         if (!bySignature.has(sig)) bySignature.set(sig, { content: c, platforms: [] })
         bySignature.get(sig).platforms.push(key)
@@ -41,6 +53,9 @@ export async function POST(request) {
         is_carousel: !!g.content.is_carousel,
         slide_count: g.content.is_carousel ? Math.max(2, Math.min(10, Number(g.content.slideCount ?? g.content.slide_count) || 5)) : null,
         is_video: !!g.content.is_video,
+        // Text-only, or the user supplied their own image: n8n skips image work.
+        skip_media: !!g.content.skip_media,
+        provided_image_url: g.content.provided_image_url || '',
         platforms: g.platforms,
       }))
     } else {
@@ -58,6 +73,16 @@ export async function POST(request) {
 
     if (!groups.length) {
       return NextResponse.json({ error: 'At least one platform needs a topic' }, { status: 400 })
+    }
+
+    // A user-supplied image must be one this user uploaded to their own folder.
+    const ownImagePrefix = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/post-images/${userId}/`
+    for (const g of groups) {
+      if (g.provided_image_url && !String(g.provided_image_url).startsWith(ownImagePrefix)) {
+        return NextResponse.json({ error: 'That image was not uploaded through the dashboard' }, { status: 400 })
+      }
+      // Carousels and videos build their own media, so ignore a supplied image there.
+      if (g.is_carousel || g.is_video) { g.skip_media = false; g.provided_image_url = '' }
     }
 
     // ── Batch usage limit check — each group counts as one post ─────────
@@ -81,7 +106,8 @@ export async function POST(request) {
       if (sub.status === 'canceled') {
         return NextResponse.json({ error: 'Your subscription has been cancelled. Please resubscribe to continue.', code: 'SUBSCRIPTION_CANCELED' }, { status: 403 })
       }
-      if (sub.posts_used + groups.length > sub.posts_limit) {
+      // Monthly limit: switched off for now (see lib/featureFlags.js).
+      if (USAGE_LIMITS_ENABLED && sub.posts_used + groups.length > sub.posts_limit) {
         return NextResponse.json({
           error: `This needs ${groups.length} post${groups.length === 1 ? '' : 's'}, but you only have ${sub.posts_limit - sub.posts_used} remaining this month.`,
           code:  'LIMIT_REACHED',
@@ -92,14 +118,12 @@ export async function POST(request) {
     }
 
     // ── Fire one n8n call per group, in parallel ─────────────────────────
-    // These used to run sequentially, so a 2-group submission (e.g. one
-    // platform set to video, another to carousel) waited on both n8n round
-    // trips back to back before the user saw anything. n8n's webhook
-    // already responds as soon as the post row is saved (well before
-    // carousel/video finish generating in the background), so the actual
-    // wait here is already fairly short per call — running them in
-    // parallel means a multi-group submission now takes as long as the
-    // slowest single group, not the sum of all of them.
+    // We do not wait for the generation to finish (it takes 2-3 minutes and
+    // used to hit the old 120s limit, reporting "failed" for runs that then
+    // succeeded in n8n). Each call returns as soon as n8n has either rejected
+    // the request or had ACCEPT_WINDOW_MS to start working on it. The Review
+    // Queue shows a "Generating..." banner and picks the post up when it lands.
+    const locale    = await loadLocaleContext(userId)
     const n8nUrl    = process.env.N8N_WEBHOOK_URL
     const n8nSecret = process.env.N8N_WEBHOOK_SECRET
     if (!n8nUrl) return NextResponse.json({ error: 'n8n webhook URL not configured' }, { status: 500 })
@@ -117,31 +141,36 @@ export async function POST(request) {
             is_carousel:  g.is_carousel,
             slide_count:  g.slide_count,
             is_video:     g.is_video,
+            skip_media:   !!g.skip_media,
+            provided_image_url: g.provided_image_url || '',
             is_campaign:  false,
+            ...locale,
             client_id:    userId,
             client_email: session.user.email,
           }),
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(ACCEPT_WINDOW_MS),
         })
 
         if (n8nRes.ok) {
-          if (subRow) await supabaseAdmin.rpc('increment_post_count', { p_client_id: userId })
-          return { platforms: g.platforms, status: 'generated' }
-        } else {
-          const text = await n8nRes.text().catch(() => '')
-          return { platforms: g.platforms, status: 'failed', error: `${n8nRes.status} ${text}` }
+          return { platforms: g.platforms, status: 'started' }
         }
+        const text = await n8nRes.text().catch(() => '')
+        return { platforms: g.platforms, status: 'failed', error: `${n8nRes.status} ${text}` }
       } catch (err) {
-        return { platforms: g.platforms, status: err.name === 'TimeoutError' ? 'timeout' : 'failed', error: err.message }
+        // No answer inside the window = accepted and still running.
+        if (err.name === 'TimeoutError') return { platforms: g.platforms, status: 'started' }
+        return { platforms: g.platforms, status: 'failed', error: err.message }
       }
     }))
 
-    const succeeded = results.filter(r => r.status === 'generated').length
-    if (succeeded === 0) {
-      return NextResponse.json({ error: 'Generation failed for all posts — check n8n logs.', results }, { status: 502 })
+    const started = results.filter(r => r.status === 'started').length
+    if (started === 0) {
+      return NextResponse.json({ error: 'Could not start generation — check the n8n webhook URL and secret.', results }, { status: 502 })
     }
 
-    return NextResponse.json({ success: true, generated: succeeded, failed: results.length - succeeded, results })
+    // `generated` keeps its old name for existing clients; it now means
+    // "started" (the posts arrive in the Review Queue in about 2-3 minutes).
+    return NextResponse.json({ success: true, processing: true, generated: started, failed: results.length - started, results })
 
   } catch (err) {
     console.error('Generate API error:', err)
