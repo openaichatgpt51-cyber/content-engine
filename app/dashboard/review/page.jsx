@@ -312,6 +312,11 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
     if (!currentSlide) return
     if (slideDraftText === currentSlide.text) { cancelSlideEdit(); return }
     setSaving(true)
+    // Slide overlay copy is keyed 'slide:N' so it's tracked separately from
+    // the caption, and can be fed back to the carousel generator rather than
+    // the caption writer.
+    const slideKey = `slide:${currentSlide.slide_number}`
+    const original = await captureOriginal(slideKey, currentSlide.text)
     const newImageUrl = rebuildSlideOverlayUrl(currentSlide.image_url, slideDraftText)
     const newSlides = sortedSlides.map((s, i) => i === carouselActive ? { ...s, text: slideDraftText, image_url: newImageUrl } : s)
     const { error } = await supabase.from('posts').update({ carousel_slides: newSlides }).eq('id', localPost.id)
@@ -321,6 +326,7 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
     onUpdate({ carousel_slides: newSlides })
     setSlideEditing(false)
     showMsg('Slide updated')
+    await logVoiceEdit(slideKey, null, original, slideDraftText)
   }
 
   function openSlideImgPanel() {
@@ -493,9 +499,65 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
     setEditing(false)
   }
 
+  // ── VOICE LEARNING LOOP ───────────────────────────────────────────────────
+  // The first time a field is edited, the text on screen IS the AI draft, so
+  // store it in posts.original_content (keyed by field name, or 'slide:N' for
+  // carousel slides). Later edits of the same field reuse that stored
+  // original instead of treating the previous edit as the starting point.
+  // Best-effort: if storing fails, the edit still goes ahead using the
+  // on-screen text. Posts edited before this existed have no stored draft,
+  // so their first logged "original" is whatever was on screen at that time.
+  async function captureOriginal(key, onScreenText) {
+    const originals = localPost.original_content || {}
+    if (originals[key] !== undefined) return originals[key]
+    const next = { ...originals, [key]: onScreenText }
+    const { error } = await supabase
+      .from('posts')
+      .update({ original_content: next })
+      .eq('id', localPost.id)
+    if (error) {
+      console.error('Failed to store original draft:', error.message)
+      return onScreenText
+    }
+    setLocalPost(p => ({ ...p, original_content: next }))
+    onUpdate({ original_content: next })
+    return onScreenText
+  }
+
+  // One voice_edits row per (post, field), updated in place on re-edits, so
+  // the table holds "AI draft → latest version" rather than every
+  // intermediate save. If the field is edited back to the AI draft there is
+  // nothing to learn from, so any earlier row is removed. Best-effort: the
+  // edit itself is already saved, so a failure here must never surface as a
+  // failed save.
+  async function logVoiceEdit(editKey, platform, original, edited) {
+    if (edited.trim() === original.trim()) {
+      const { error } = await supabase
+        .from('voice_edits')
+        .delete()
+        .eq('post_id', localPost.id)
+        .eq('edit_key', editKey)
+      if (error) console.error('Failed to clear voice edit:', error.message)
+      return
+    }
+    const { error } = await supabase.from('voice_edits').upsert({
+      client_id:     localPost.client_id,
+      post_id:       localPost.id,
+      edit_key:      editKey,
+      platform,
+      original_text: original,
+      edited_text:   edited,
+      updated_at:    new Date().toISOString(),
+    }, { onConflict: 'post_id,edit_key' })
+    if (error) console.error('Failed to log voice edit:', error.message)
+  }
+
   async function saveEdit() {
     if (draftText === currentText) { cancelEdit(); return }
     setSaving(true)
+    // Make sure the original AI draft of this field is on record before the
+    // content below overwrites what's on screen.
+    const original = await captureOriginal(cfg.field, currentText)
     const changes = { [cfg.field]: draftText }
     const { error } = await supabase
       .from('posts')
@@ -511,6 +573,7 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
     onUpdate(changes)
     setEditing(false)
     showMsg('Changes saved')
+    await logVoiceEdit(cfg.field, cfg.platform, original, draftText)
   }
 
   // ── RESCHEDULE ────────────────────────────────────────────────────────────
