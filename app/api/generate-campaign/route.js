@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
 import { loadLocaleContext } from '../../../lib/locale-context'
+import { resolveActiveBrandId } from '../../../lib/brand'
 
 const N8N_WEBHOOK_URL    = process.env.N8N_WEBHOOK_URL
 const N8N_WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET
@@ -24,10 +25,11 @@ export async function POST(request) {
     if (cleanGroups.length > 20) return NextResponse.json({ error: 'Campaigns are limited to 20 posts at a time' }, { status: 400 })
 
     // ── Brand profile completeness check ────────────────────────────────
+    const brandId = await resolveActiveBrandId(supabase, userId)
     const { data: profile } = await supabaseAdmin
       .from('brand_profiles')
       .select('company_description, target_audience, topics_to_avoid, example_posts')
-      .eq('client_id', userId)
+      .eq('brand_id', brandId)
       .maybeSingle()
 
     if (!profile?.company_description?.trim() || !profile?.target_audience?.trim()) {
@@ -68,7 +70,7 @@ export async function POST(request) {
     // Still sequential, still required — option B's collision-aware
     // scheduling only works if each post's slot is committed before the
     // next one checks for collisions. Unchanged from the original design.
-    const locale  = await loadLocaleContext(userId)
+    const locale  = await loadLocaleContext(userId, brandId)
     const results = []
     for (const g of cleanGroups) {
       try {
@@ -88,6 +90,7 @@ export async function POST(request) {
             is_campaign:  true,
             ...locale,
             client_id:    userId,
+            brand_id:     brandId,
             client_email: session.user.email,
           }),
         })

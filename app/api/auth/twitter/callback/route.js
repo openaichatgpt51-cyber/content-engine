@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '../../../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
+import { resolveActiveBrandId } from '../../../../../lib/brand'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -46,16 +47,19 @@ export async function GET(request) {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) throw new Error('No session')
+    const brandId = await resolveActiveBrandId(supabase, session.user.id)
+    if (!brandId) throw new Error('No brand found for this account')
 
     await supabase.from('platform_accounts').upsert({
       client_id:     session.user.id,
+      brand_id:      brandId,
       platform:      'twitter',
       account_id:    userData.data?.id,
       access_token:  tokenData.access_token,
       refresh_token: tokenData.refresh_token || null,
       token_valid:   true,
       updated_at:    new Date().toISOString(),
-    }, { onConflict: 'client_id, platform' })
+    }, { onConflict: 'brand_id,platform' })
 
     // Clear the code verifier cookie
     const response = NextResponse.redirect(

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import UsageMeter from './UsageMeter'
+import BrandSwitcher from './BrandSwitcher'
 
 const NAV = [
   { href: '/dashboard',              label: 'Calendar',      icon: CalIcon },
@@ -50,6 +51,9 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
           AI Social Dashboard
         </div>
       </div>
+
+      {/* Brand switcher (renders nothing while multi-brand is off) */}
+      <BrandSwitcher />
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '16px 12px' }}>

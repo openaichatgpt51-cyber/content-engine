@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
+import { resolveActiveBrandId } from '../../../lib/brand'
 
 // Distinct platform norms matter here — the same brand shouldn't get
 // identical topic suggestions for LinkedIn and Twitter. This is deliberately
@@ -25,10 +26,11 @@ export async function POST(request) {
     }
     const n = Math.max(1, Math.min(10, Number(count) || 5))
 
+    const brandId = await resolveActiveBrandId(supabase, session.user.id)
     const { data: profile } = await supabaseAdmin
       .from('brand_profiles')
       .select('company_description, target_audience, topics_to_avoid, tone')
-      .eq('client_id', session.user.id)
+      .eq('brand_id', brandId)
       .maybeSingle()
 
     if (!profile?.company_description?.trim() || !profile?.target_audience?.trim()) {

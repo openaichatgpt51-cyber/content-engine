@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '../../../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
+import { resolveActiveBrandId } from '../../../../../lib/brand'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -44,11 +45,14 @@ export async function GET(request) {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) throw new Error('No session')
+    const brandId = await resolveActiveBrandId(supabase, session.user.id)
+    if (!brandId) throw new Error('No brand found for this account')
 
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
 
     const { error: dbError } = await supabase.from('platform_accounts').upsert({
       client_id:    session.user.id,
+      brand_id:     brandId,
       platform:     'linkedin',
       account_id:   profile.sub,
       access_token: tokenData.access_token,
@@ -56,7 +60,7 @@ export async function GET(request) {
       expires_at:   expiresAt,
       token_valid:  true,
       updated_at:   new Date().toISOString(),
-    }, { onConflict: 'client_id, platform' })
+    }, { onConflict: 'brand_id,platform' })
 
     if (dbError) {
       console.error('LinkedIn OAuth: Supabase write failed:', dbError)

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
 import { loadLocaleContext } from '../../../lib/locale-context'
+import { resolveActiveBrandId } from '../../../lib/brand'
 
 // How long to wait for n8n before treating the job as "accepted and running".
 // A full generation takes ~2-3 minutes, so n8n does not answer within this
@@ -123,7 +124,8 @@ export async function POST(request) {
     // succeeded in n8n). Each call returns as soon as n8n has either rejected
     // the request or had ACCEPT_WINDOW_MS to start working on it. The Review
     // Queue shows a "Generating..." banner and picks the post up when it lands.
-    const locale    = await loadLocaleContext(userId)
+    const brandId   = await resolveActiveBrandId(supabase, userId)
+    const locale    = await loadLocaleContext(userId, brandId)
     const n8nUrl    = process.env.N8N_WEBHOOK_URL
     const n8nSecret = process.env.N8N_WEBHOOK_SECRET
     if (!n8nUrl) return NextResponse.json({ error: 'n8n webhook URL not configured' }, { status: 500 })
@@ -146,6 +148,7 @@ export async function POST(request) {
             is_campaign:  false,
             ...locale,
             client_id:    userId,
+            brand_id:     brandId,
             client_email: session.user.email,
           }),
           signal: AbortSignal.timeout(ACCEPT_WINDOW_MS),

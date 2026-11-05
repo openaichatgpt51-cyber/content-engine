@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '../../../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
+import { resolveActiveBrandId } from '../../../../../lib/brand'
 
 // Validation endpoints per platform
 const VALIDATION = {
@@ -15,12 +16,15 @@ export async function GET(request, { params }) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return NextResponse.redirect(new URL('/login', request.url))
 
+  const brandId = await resolveActiveBrandId(supabase, session.user.id)
+
   // In a real OAuth flow you'd exchange the code for a token here.
   // This assumes the token is already stored — we validate it.
   const { data: account } = await supabase
     .from('platform_accounts')
     .select('access_token')
     .eq('client_id', session.user.id)
+    .eq('brand_id', brandId)
     .eq('platform', platform)
     .single()
 
@@ -37,6 +41,7 @@ export async function GET(request, { params }) {
     .from('platform_accounts')
     .update({ token_valid: valid, updated_at: new Date().toISOString() })
     .eq('client_id', session.user.id)
+    .eq('brand_id', brandId)
     .eq('platform', platform)
 
   const step = platformStep(platform)

@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '../../../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
+import { resolveActiveBrandId } from '../../../../../lib/brand'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -48,18 +49,21 @@ export async function GET(request) {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) throw new Error('No session')
+    const brandId = await resolveActiveBrandId(supabase, session.user.id)
+    if (!brandId) throw new Error('No brand found for this account')
 
     const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString()
 
     await supabase.from('platform_accounts').upsert({
       client_id:    session.user.id,
+      brand_id:     brandId,
       platform:     'instagram',
       account_id:   igAccountId,
       access_token: finalToken,
       expires_at:   expiresAt,
       token_valid:  true,
       updated_at:   new Date().toISOString(),
-    }, { onConflict: 'client_id, platform' })
+    }, { onConflict: 'brand_id,platform' })
 
     return NextResponse.redirect(
       new URL(`${redirect}?connected=instagram`, request.url)

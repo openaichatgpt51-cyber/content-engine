@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { slotsForPlatforms } from '../../../lib/schedule'
+import { resolveActiveBrandId } from '../../../lib/brand'
 
 // "Write it myself": creates a post from text (and an optional image) the user
 // supplies, with NO AI generation and no n8n run. The post lands in the Review
@@ -50,10 +51,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Instagram posts need an image' }, { status: 400 })
     }
 
+    const brandId = await resolveActiveBrandId(supabase, userId)
+    // the brand's own schedule (copied from onboarding for existing clients)
     const { data: schedule } = await supabaseAdmin
-      .from('onboarding')
+      .from('brand_schedules')
       .select('posting_days, posting_time, timezone')
-      .eq('client_id', userId)
+      .eq('brand_id', brandId)
       .maybeSingle()
     const times = slotsForPlatforms(platforms, schedule)
 
@@ -64,6 +67,7 @@ export async function POST(request) {
       .from('posts')
       .insert({
         client_id:             userId,
+        brand_id:              brandId,
         platforms:             platforms.join(','),
         topic,
         linkedin_article_long: clean.LinkedIn || '',
