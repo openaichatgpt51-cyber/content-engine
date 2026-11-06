@@ -61,7 +61,13 @@ export async function POST(request) {
     const times = slotsForPlatforms(platforms, schedule)
 
     const firstText = clean[platforms[0]]
-    const topic = String(body.topic || '').trim().slice(0, 120) || firstText.split('\n')[0].slice(0, 80)
+    // Use the title the user gave. Without one, take the first line of the post
+    // and cut it at a word boundary instead of mid-word.
+    const firstLine = firstText.split('\n').find(l => l.trim()) || ''
+    const derived = firstLine.length <= 70
+      ? firstLine.trim()
+      : firstLine.slice(0, 70).replace(/\s+\S*$/, '').replace(/[\s,;:.\-–—]+$/, '') + '…'
+    const topic = String(body.topic || '').trim().slice(0, 120) || derived
 
     const { data: row, error } = await supabaseAdmin
       .from('posts')

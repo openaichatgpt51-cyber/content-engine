@@ -6,6 +6,10 @@ import { supabase } from '../lib/supabase'
 // reports { url, name } back. Used on the New Post page for "use my own image".
 const MAX_BYTES = 5 * 1024 * 1024 // LinkedIn rejects larger images
 const ALLOWED   = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+// Store with a standard extension chosen from the real file type, not the file's
+// own name: phones and Windows produce .jfif/.jpeg/.JPG variants that browsers
+// and LinkedIn do not always accept.
+const EXT_BY_TYPE = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }
 
 export default function ImageUploadField({ value, onChange, disabled = false, label = 'Your own image (optional)', hint }) {
   const inputRef = useRef(null)
@@ -22,9 +26,9 @@ export default function ImageUploadField({ value, onChange, disabled = false, la
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('You must be logged in')
-      const ext  = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const ext  = EXT_BY_TYPE[file.type] || 'jpg'
       const path = `${user.id}/upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`
-      const { error: upErr } = await supabase.storage.from('post-images').upload(path, file, { upsert: false })
+      const { error: upErr } = await supabase.storage.from('post-images').upload(path, file, { upsert: false, contentType: file.type })
       if (upErr) throw upErr
       const { data: pub } = supabase.storage.from('post-images').getPublicUrl(path)
       onChange({ url: pub.publicUrl, name: file.name })

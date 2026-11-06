@@ -17,6 +17,7 @@ export default function OwnPostForm() {
   const [enabled, setEnabled] = useState({ LinkedIn: true, Instagram: false, Twitter: false })
   const [texts,   setTexts]   = useState({ LinkedIn: '', Instagram: '', Twitter: '' })
   const [image,   setImage]   = useState(null)
+  const [title,   setTitle]   = useState('')
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
 
@@ -36,7 +37,7 @@ export default function OwnPostForm() {
       const res = await fetch('/api/create-own-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platforms, texts, image_url: image?.url || '' }),
+        body: JSON.stringify({ platforms, texts, image_url: image?.url || '', topic: title.trim() }),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`)
@@ -49,6 +50,16 @@ export default function OwnPostForm() {
 
   return (
     <form onSubmit={handleSubmit}>
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--ink-40)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+          Post title (optional)
+        </label>
+        <input
+          value={title} onChange={e => setTitle(e.target.value)} maxLength={120} disabled={loading}
+          placeholder="Shown in your calendar and review queue, e.g. Dangote IPO announcement"
+          style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontFamily: 'var(--font-body)', outline: 'none', background: 'var(--white)' }}
+        />
+      </div>
       {PLATFORMS.map(p => (
         <div key={p.key} style={{ marginBottom: 16, border: '1.5px solid var(--fog-60)', borderRadius: 'var(--radius-lg)', background: 'var(--white)', opacity: enabled[p.key] ? 1 : 0.5, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: enabled[p.key] ? '1px solid var(--fog-60)' : 'none' }}>
