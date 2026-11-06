@@ -27,7 +27,8 @@ function ReviewFlow() {
 
   const [posts,     setPosts]     = useState([])
   const [loading,   setLoading]   = useState(true)
-  const [accounts,  setAccounts]  = useState({}) // { linkedin: {...}, twitter: {...} }
+  const [accounts,  setAccounts]  = useState([]) // connected platform_accounts rows (name, handle, avatar; never tokens)
+  const profileSyncTried = useRef(false)
   const [postingPaused, setPostingPaused] = useState(false)
   const scrolledRef = useRef(false)
 
@@ -77,13 +78,36 @@ function ReviewFlow() {
   async function loadAccounts() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const { data } = await supabase
+    let { data, error } = await supabase
       .from('platform_accounts')
-      .select('platform, account_id')
+      .select('platform, account_id, brand_id, display_name, handle, avatar_url, profile_synced_at')
       .eq('client_id', user.id)
-    const map = {}
-    for (const a of data || []) map[a.platform] = a.account_id
-    setAccounts(map)
+    if (error) {
+      // Profile columns not migrated yet: fall back to the old shape so the
+      // page still loads (previews show placeholders).
+      const fallback = await supabase
+        .from('platform_accounts')
+        .select('platform, account_id, brand_id')
+        .eq('client_id', user.id)
+      data = fallback.data
+    }
+    const rows = data || []
+    setAccounts(rows)
+
+    // Accounts connected before profiles were stored (or with an expired
+    // Instagram avatar) are filled in once per visit, then reloaded.
+    const STALE = 3 * 24 * 60 * 60 * 1000
+    const needsSync = !error && rows.some(r =>
+      !r.profile_synced_at || Date.now() - new Date(r.profile_synced_at).getTime() > STALE
+    )
+    if (needsSync && !profileSyncTried.current) {
+      profileSyncTried.current = true
+      try {
+        const res = await fetch('/api/platform-profiles/sync', { method: 'POST' })
+        const out = await res.json().catch(() => ({}))
+        if (out.updated > 0) loadAccounts()
+      } catch {}
+    }
   }
 
   async function loadPauseState() {
@@ -223,7 +247,7 @@ function buildAiImagePrompt(text) {
 }
 
 // ── Post Card ─────────────────────────────────────────────────────────────
-function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highlighted = false, onUpdate, onRemove }) {
+function PostCard({ post, index = 0, accounts = [], postingPaused = false, highlighted = false, onUpdate, onRemove }) {
   const availableTabs = tabsForPost(post)
   const [tab,          setTab]          = useState(availableTabs[0].key)
   const [editing,      setEditing]      = useState(false)
@@ -265,6 +289,12 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
 
   const cfg         = availableTabs.find(t => t.key === tab) || availableTabs[0]
   const currentText = localPost[cfg.field] || ''
+  // The account this post will publish from: the one connected to the post's
+  // own brand, else any connected account on that platform.
+  const accountFor = platform =>
+    accounts.find(a => a.platform === platform && localPost.brand_id && a.brand_id === localPost.brand_id)
+    || accounts.find(a => a.platform === platform)
+    || null
   const charCount   = editing ? draftText.length : currentText.length
   // image_1_view_url points at a Google Drive *webpage* (drive.google.com/file/d/.../view),
   // not raw image bytes — it can never render inside an <img> tag. image_1_url is the
@@ -1025,9 +1055,9 @@ function PostCard({ post, index = 0, accounts = {}, postingPaused = false, highl
               Preview
             </div>
             <div style={{ overflowY: 'auto', maxHeight: 560 }}>
-              {tab === 'linkedin'  && <LinkedInPreview  text={previewText} imageUrl={previewImageUrl} handle={accounts.linkedin} />}
-              {tab === 'instagram' && <InstagramPreview caption={previewText} imageUrl={previewImageUrl} handle={accounts.instagram} />}
-              {tab === 'twitter'   && <XPreview         text={previewText} imageUrl={previewImageUrl} handle={accounts.twitter} />}
+              {tab === 'linkedin'  && <LinkedInPreview  text={previewText} imageUrl={previewImageUrl} account={accountFor('linkedin')} />}
+              {tab === 'instagram' && <InstagramPreview caption={previewText} imageUrl={previewImageUrl} account={accountFor('instagram')} />}
+              {tab === 'twitter'   && <XPreview         text={previewText} imageUrl={previewImageUrl} account={accountFor('twitter')} />}
             </div>
 
             {tab === 'twitter' && (
@@ -1270,14 +1300,39 @@ function navBtnStyle(disabled) {
   }
 }
 
-function LinkedInPreview({ text, imageUrl }) {
+// Round avatar: the real profile picture when we have one, initials otherwise
+// (also if the image URL has expired or fails to load).
+function Avatar({ src, name, size = 40, bg = '#999' }) {
+  const [failed, setFailed] = useState(false)
+  const initials = (name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()
+  if (src && !failed) {
+    return <img src={src} alt="" width={size} height={size} onError={() => setFailed(true)}
+      style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+  }
+  return (
+    <div style={{ width: size, height: size, borderRadius: '50%', background: bg, color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 'bold', fontSize: size * 0.38, flexShrink: 0 }}>
+      {initials}
+    </div>
+  )
+}
+
+function NotConnected({ platform }) {
+  return (
+    <span style={{ color: 'var(--ink-20)', fontWeight: 400, fontStyle: 'italic' }}>
+      No {platform} account connected — connect in Settings
+    </span>
+  )
+}
+
+function LinkedInPreview({ text, imageUrl, account }) {
+  const name = account?.display_name
   return (
     <div style={{ border: '1px solid var(--fog-60)', borderRadius: 8, padding: 16, background: '#fff' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#0a66c2', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 'bold' }}>LI</div>
+        <Avatar src={account?.avatar_url} name={name || 'LinkedIn'} size={48} bg="#0a66c2" />
         <div>
-          <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>Your Name</div>
-          <div style={{ fontSize: '0.75rem', color: 'gray' }}>Your Title • Just now</div>
+          <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{name || (account ? 'LinkedIn member' : <NotConnected platform="LinkedIn" />)}</div>
+          <div style={{ fontSize: '0.75rem', color: 'gray' }}>Just now • 🌐</div>
         </div>
       </div>
       <p style={{ fontSize: '0.875rem', lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: 12 }}>{text || 'Your post text here...'}</p>
@@ -1286,31 +1341,41 @@ function LinkedInPreview({ text, imageUrl }) {
   )
 }
 
-function InstagramPreview({ caption, imageUrl }) {
+function InstagramPreview({ caption, imageUrl, account }) {
+  const handle = account?.handle
   return (
     <div style={{ border: '1px solid var(--fog-60)', borderRadius: 8, background: '#fff', overflow: 'hidden' }}>
-      <div style={{ padding: 12, fontWeight: 600, fontSize: '0.875rem', borderBottom: '1px solid var(--fog-60)' }}>Instagram Preview</div>
+      <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--fog-60)' }}>
+        <Avatar src={account?.avatar_url} name={handle || 'IG'} size={32} bg="#c13584" />
+        <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>
+          {handle || (account ? 'Instagram account' : <NotConnected platform="Instagram" />)}
+        </span>
+      </div>
       <FadeImage src={imageUrl} alt="Preview" aspectRatio="1/1" radius={0} retryable={false} />
       <div style={{ padding: 12 }}>
-        <p style={{ fontSize: '0.8125rem', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{caption || 'Your caption here...'}</p>
+        <p style={{ fontSize: '0.8125rem', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
+          {handle && <strong>{handle} </strong>}{caption || 'Your caption here...'}
+        </p>
       </div>
     </div>
   )
 }
 
-function XPreview({ text, imageUrl, handle }) {
+function XPreview({ text, imageUrl, account }) {
+  const handle = account?.handle
   return (
     <div style={{ border: '1px solid var(--fog-60)', borderRadius: 8, padding: 16, background: '#fff' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#000', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 'bold' }}>X</div>
+        <Avatar src={account?.avatar_url} name={account?.display_name || handle || 'X'} size={40} bg="#000" />
         <div>
-          <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>
-            {handle ? (
-              <span style={{ color: 'gray', fontWeight: 400 }}>@{handle}</span>
-            ) : (
-              <span style={{ color: 'var(--ink-20)', fontWeight: 400, fontStyle: 'italic' }}>No X account connected — connect in Settings</span>
-            )}
-          </div>
+          {handle ? (
+            <>
+              <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>{account.display_name || handle}</div>
+              <div style={{ fontSize: '0.8125rem', color: 'gray' }}>@{handle}</div>
+            </>
+          ) : (
+            <div style={{ fontSize: '0.875rem' }}>{account ? 'X account' : <NotConnected platform="X" />}</div>
+          )}
         </div>
       </div>
       <p style={{ fontSize: '0.875rem', lineHeight: 1.4, whiteSpace: 'pre-wrap', marginBottom: 10 }}>{text || 'What is happening?!'}</p>

@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from '../../../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { resolveActiveBrandId } from '../../../../../lib/brand'
+import { fetchPlatformProfile, saveProfile } from '../../../../../lib/platform-profile'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -64,6 +65,11 @@ export async function GET(request) {
       token_valid:  true,
       updated_at:   new Date().toISOString(),
     }, { onConflict: 'brand_id,platform' })
+
+    await saveProfile(supabase, {
+      brandId, platform: 'instagram',
+      profile: await fetchPlatformProfile('instagram', finalToken, igAccountId),
+    })
 
     return NextResponse.redirect(
       new URL(`${redirect}?connected=instagram`, request.url)

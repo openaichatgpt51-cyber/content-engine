@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from '../../../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { resolveActiveBrandId } from '../../../../../lib/brand'
+import { fetchPlatformProfile, saveProfile } from '../../../../../lib/platform-profile'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -60,6 +61,11 @@ export async function GET(request) {
       token_valid:   true,
       updated_at:    new Date().toISOString(),
     }, { onConflict: 'brand_id,platform' })
+
+    await saveProfile(supabase, {
+      brandId, platform: 'twitter',
+      profile: await fetchPlatformProfile('twitter', tokenData.access_token),
+    })
 
     // Clear the code verifier cookie
     const response = NextResponse.redirect(

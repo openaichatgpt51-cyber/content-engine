@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from '../../../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { resolveActiveBrandId } from '../../../../../lib/brand'
+import { fetchPlatformProfile, saveProfile } from '../../../../../lib/platform-profile'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -66,6 +67,13 @@ export async function GET(request) {
       console.error('LinkedIn OAuth: Supabase write failed:', dbError)
       throw new Error(`Supabase write failed: ${dbError.message}`)
     }
+
+    // Best-effort: remember the real name / avatar for the Review Queue preview.
+    // The userinfo response we already have carries both, so no extra call.
+    await saveProfile(supabase, {
+      brandId, platform: 'linkedin',
+      profile: { display_name: profile.name || null, handle: null, avatar_url: profile.picture || null },
+    })
 
     return NextResponse.redirect(
       new URL(`${redirect}?connected=linkedin`, request.url)
