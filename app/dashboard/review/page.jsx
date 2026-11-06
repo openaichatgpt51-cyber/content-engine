@@ -291,6 +291,9 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
   const currentText = localPost[cfg.field] || ''
   // The account this post will publish from: the one connected to the post's
   // own brand, else any connected account on that platform.
+  const scheduledLabel = localPost[cfg.scheduledField]
+    ? new Date(localPost[cfg.scheduledField]).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : ''
   const accountFor = platform =>
     accounts.find(a => a.platform === platform && localPost.brand_id && a.brand_id === localPost.brand_id)
     || accounts.find(a => a.platform === platform)
@@ -1055,7 +1058,7 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
               Preview
             </div>
             <div style={{ overflowY: 'auto', maxHeight: 560 }}>
-              {tab === 'linkedin'  && <LinkedInPreview  text={previewText} imageUrl={previewImageUrl} account={accountFor('linkedin')} />}
+              {tab === 'linkedin'  && <LinkedInPreview  text={previewText} imageUrl={previewImageUrl} account={accountFor('linkedin')} when={scheduledLabel} />}
               {tab === 'instagram' && <InstagramPreview caption={previewText} imageUrl={previewImageUrl} account={accountFor('instagram')} />}
               {tab === 'twitter'   && <XPreview         text={previewText} imageUrl={previewImageUrl} account={accountFor('twitter')} />}
             </div>
@@ -1324,7 +1327,7 @@ function NotConnected({ platform }) {
   )
 }
 
-function LinkedInPreview({ text, imageUrl, account }) {
+function LinkedInPreview({ text, imageUrl, account, when }) {
   const name = account?.display_name
   return (
     <div style={{ border: '1px solid var(--fog-60)', borderRadius: 8, padding: 16, background: '#fff' }}>
@@ -1332,7 +1335,7 @@ function LinkedInPreview({ text, imageUrl, account }) {
         <Avatar src={account?.avatar_url} name={name || 'LinkedIn'} size={48} bg="#0a66c2" />
         <div>
           <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{name || (account ? 'LinkedIn member' : <NotConnected platform="LinkedIn" />)}</div>
-          <div style={{ fontSize: '0.75rem', color: 'gray' }}>Just now • 🌐</div>
+          <div style={{ fontSize: '0.75rem', color: 'gray' }}>{when ? `Scheduled · ${when}` : 'Not scheduled'} • 🌐</div>
         </div>
       </div>
       <p style={{ fontSize: '0.875rem', lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: 12 }}>{text || 'Your post text here...'}</p>

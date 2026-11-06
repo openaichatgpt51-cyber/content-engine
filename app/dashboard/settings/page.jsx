@@ -125,6 +125,11 @@ function SettingsFlow() {
     setImageError('')
     try {
       const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setImageError('Your session has expired — please sign in again.')
+        setImageUploading(false)
+        return
+      }
       const ext  = file.name.split('.').pop()
       const path = `${user.id}/brand-${Date.now()}.${ext}`
       const { error: uploadErr } = await supabase.storage.from('post-images').upload(path, file, { upsert: true })
@@ -151,7 +156,19 @@ function SettingsFlow() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageUrls: brandImages }),
       })
-      const body = await res.json()
+      // Read as text first: if the server (or Vercel itself) answers with an
+      // HTML error page, show the HTTP status instead of a JSON parse error.
+      const raw = await res.text()
+      let body = null
+      try { body = JSON.parse(raw) } catch {}
+      if (!body) {
+        const redirectedToLogin = res.redirected && /\/login/.test(res.url)
+        throw new Error(
+          redirectedToLogin
+            ? 'Your session has expired — please sign in again.'
+            : `Analysis failed (HTTP ${res.status}${res.status === 504 ? ', timed out' : ''}). Try fewer or smaller images.`
+        )
+      }
       if (!res.ok) throw new Error(body.error || 'Analysis failed')
       setVisualStyle(body.description)
     } catch (err) {
