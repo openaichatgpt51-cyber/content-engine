@@ -14,7 +14,7 @@ export async function GET(request) {
 
   const { data: duePosts, error } = await supabaseAdmin
     .from('posts')
-    .select('id, client_id, linkedin_post_urn, linkedin_posted_at')
+    .select('id, client_id, brand_id, linkedin_post_urn, linkedin_posted_at')
     .eq('posting_status', 'DONE')
     .eq('linkedin_posted', 'YES')
     .not('linkedin_post_urn', 'is', null)
@@ -40,6 +40,7 @@ export async function GET(request) {
         .from('platform_accounts')
         .select('access_token')
         .eq('client_id', post.client_id)
+        .eq('brand_id', post.brand_id)
         .eq('platform', 'linkedin')
         .maybeSingle()
       if (!account?.access_token) { results.push({ post_id: post.id, status: 'no_token' }); continue }
@@ -76,6 +77,7 @@ export async function GET(request) {
       await supabaseAdmin.from('post_analytics').insert({
         post_id:   post.id,
         client_id: post.client_id,
+        brand_id:  post.brand_id,
         platform:  'linkedin',
         ...metrics,
       })

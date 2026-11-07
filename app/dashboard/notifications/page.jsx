@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { getNotifications } from '../../../lib/notifications'
+import { loadBrandContext } from '../../../lib/brand'
+import { MULTI_BRAND_ENABLED } from '../../../lib/featureFlags'
 
 const SEVERITY_STYLE = {
   error:   { bg: 'var(--failed-bg)',   border: 'var(--failed-border)',   dot: 'var(--failed)' },
@@ -9,7 +11,9 @@ const SEVERITY_STYLE = {
 
 export default async function NotificationsPage() {
   const supabase = await createSupabaseServerClient()
-  const notifications = await getNotifications(supabase)
+  const { data: { session } } = await supabase.auth.getSession()
+  const ctx = session ? await loadBrandContext(supabase, session.user.id) : { activeBrandId: null }
+  const notifications = await getNotifications(supabase, MULTI_BRAND_ENABLED ? ctx.activeBrandId : null)
 
   return (
     <div style={{ padding: '32px 40px', maxWidth: 720 }}>

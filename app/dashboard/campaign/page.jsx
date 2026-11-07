@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Spinner } from '../../../components/ui'
 import { supabase } from '../../../lib/supabase'
+import { useBrand } from '../../../components/BrandProvider'
+import { scopeBrand } from '../../../lib/brand-scope'
 
 const TONES = [
   { value: 'professional', label: 'Professional' },
@@ -16,6 +18,7 @@ const PLATFORMS = [
 ]
 
 export default function CampaignPage() {
+  const { writeBrandId } = useBrand()
   const [checkingProfile, setCheckingProfile] = useState(true)
   const [profileComplete, setProfileComplete] = useState(false)
 
@@ -60,10 +63,10 @@ export default function CampaignPage() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: profile } = await supabase
+      const { data: profile } = await scopeBrand(supabase
         .from('brand_profiles')
         .select('company_description, target_audience')
-        .eq('client_id', user.id)
+        .eq('client_id', user.id), writeBrandId)
         .maybeSingle()
       setProfileComplete(!!(profile?.company_description?.trim() && profile?.target_audience?.trim()))
       setCheckingProfile(false)

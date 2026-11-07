@@ -31,7 +31,7 @@ export default async function DashboardLayout({ children }) {
         .eq('posting_status', 'AWAITING_APPROVAL'),
       brandCtx.activeBrandId
     ),
-    getNotifications(supabase),
+    getNotifications(supabase, brandCtx.activeBrandId),
     session ? supabase.from('clients').select('is_admin').eq('id', session.user.id).maybeSingle() : { data: null },
   ])
 
