@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createSupabaseServerClient } from '../../../../lib/supabase-server'
+import { createSupabaseServerClient } from '../../../lib/supabase-server'
 
 // Always return JSON, even on failure — the settings page calls res.json()
 // unconditionally, so an HTML error page here is what produced

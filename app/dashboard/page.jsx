@@ -4,6 +4,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 import { FadeImage, Skeleton, Toast, Spinner } from '../../components/ui'
+import { useBrand } from '../../components/BrandProvider'
+import { scopeBrand } from '../../lib/brand-scope'
 
 const PLATFORMS = ['All', 'LinkedIn', 'Instagram', 'X']
 
@@ -55,6 +57,7 @@ function sameDay(a, b) {
 }
 
 function DashboardFlow() {
+  const { activeBrandId } = useBrand()
   const router = useRouter()
   const searchParams = useSearchParams()
   const targetPostId = searchParams.get('postId')
@@ -84,7 +87,7 @@ function DashboardFlow() {
       }
 
       const [postsRes, onboardingRes] = await Promise.all([
-        supabase.from('posts').select('*').eq('client_id', user.id).order('linkedin_scheduled_time', { ascending: true }),
+        scopeBrand(supabase.from('posts').select('*').eq('client_id', user.id), activeBrandId).order('linkedin_scheduled_time', { ascending: true }),
         supabase.from('onboarding').select('posting_days').eq('client_id', user.id).maybeSingle(),
       ])
 

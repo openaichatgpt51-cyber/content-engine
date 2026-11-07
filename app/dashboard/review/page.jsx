@@ -4,6 +4,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../../../lib/supabase'
 import { Spinner, FadeImage, Toast, Skeleton } from '../../../components/ui'
+import { useBrand } from '../../../components/BrandProvider'
+import { scopeBrand } from '../../../lib/brand-scope'
 
 const TABS = [
   { key: 'linkedin',  label: '🔵 LinkedIn',    field: 'linkedin_body_clean',  scheduledField: 'linkedin_scheduled_time',  charLimit: 1200, platform: 'LinkedIn'  },
@@ -21,6 +23,7 @@ function tabsForPost(post) {
 }
 
 function ReviewFlow() {
+  const { activeBrandId } = useBrand()
   const router       = useRouter()
   const searchParams = useSearchParams()
   const targetPostId = searchParams.get('postId')
@@ -135,11 +138,11 @@ function ReviewFlow() {
     return
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await scopeBrand(supabase
     .from('posts')
     .select('*')
     .eq('client_id', user.id)
-    .eq('posting_status', 'AWAITING_APPROVAL')
+    .eq('posting_status', 'AWAITING_APPROVAL'), activeBrandId)
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -483,7 +486,7 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
 
     if (examples.length) {
       const { error: exErr } = await supabase.from('approved_examples').insert(
-        examples.map(e => ({ client_id: localPost.client_id, platform: e.platform, text: e.text }))
+        examples.map(e => ({ client_id: localPost.client_id, brand_id: localPost.brand_id, platform: e.platform, text: e.text }))
       )
       if (exErr) console.error('Failed to save approved example:', exErr.message)
     }
@@ -575,6 +578,7 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
     }
     const { error } = await supabase.from('voice_edits').upsert({
       client_id:     localPost.client_id,
+      brand_id:      localPost.brand_id,
       post_id:       localPost.id,
       edit_key:      editKey,
       platform,

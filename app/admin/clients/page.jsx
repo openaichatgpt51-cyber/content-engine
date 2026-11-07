@@ -1,11 +1,15 @@
 import { supabaseAdmin } from '../../../lib/supabase-admin'
 
 export default async function AdminClientsPage() {
-  const [{ data: clients }, { data: subs }, { data: posts }] = await Promise.all([
-    supabaseAdmin.from('clients').select('id, created_at'),
+  const [{ data: clients }, { data: subs }, { data: posts }, { data: brandRows }] = await Promise.all([
+    supabaseAdmin.from('clients').select('id, created_at, max_brands'),
     supabaseAdmin.from('subscriptions').select('client_id, plan, status, posts_used, posts_limit'),
     supabaseAdmin.from('posts').select('client_id, posting_status, created_at'),
+    supabaseAdmin.from('brands').select('client_id'),
   ])
+
+  const brandCount = {}
+  for (const b of brandRows || []) brandCount[b.client_id] = (brandCount[b.client_id] || 0) + 1
 
   const subByClient = Object.fromEntries((subs || []).map(s => [s.client_id, s]))
   const postsByClient = {}
@@ -32,6 +36,8 @@ export default async function AdminClientsPage() {
       status: sub?.status || 'trialing',
       posts_used: sub?.posts_used ?? 0,
       posts_limit: sub?.posts_limit ?? 5,
+      brands: brandCount[c.id] || 0,
+      maxBrands: c.max_brands ?? 1,
       totalPosts: clientPosts.length,
       postsLast30d: recentPosts.length,
       lastPostAt,
@@ -58,7 +64,7 @@ export default async function AdminClientsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
           <thead>
             <tr>
-              {['Client', 'Plan', 'Usage', 'Total posts', 'Last 30 days', 'Last post', 'Risk'].map(h => <th key={h} style={th}>{h}</th>)}
+              {['Client', 'Plan', 'Usage', 'Brands', 'Total posts', 'Last 30 days', 'Last post', 'Risk'].map(h => <th key={h} style={th}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -67,6 +73,7 @@ export default async function AdminClientsPage() {
                 <td style={td}><code style={{ fontSize: '0.72rem' }}>{r.id.slice(0, 8)}</code></td>
                 <td style={td}>{r.plan}</td>
                 <td style={td}>{r.posts_used}/{r.posts_limit}</td>
+                <td style={td}>{r.brands}/{r.maxBrands}</td>
                 <td style={td}>{r.totalPosts}</td>
                 <td style={td}>{r.postsLast30d}</td>
                 <td style={td}>{r.lastPostAt ? new Date(r.lastPostAt).toLocaleDateString() : 'Never'}</td>

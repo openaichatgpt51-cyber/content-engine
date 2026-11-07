@@ -2,6 +2,8 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
+import { useBrand } from '../../../components/BrandProvider'
+import { scopeBrand } from '../../../lib/brand-scope'
 import { Spinner, Skeleton } from '../../../components/ui'
 import KillSwitch from '../../../components/KillSwitch'
 import UsageMeter from '../../../components/UsageMeter'
@@ -44,6 +46,7 @@ const TONES = ['Professional', 'Casual', 'Provocative', 'Educational', 'Inspirin
 
 function SettingsFlow() {
   const searchParams = useSearchParams()
+  const { activeBrandId, writeBrandId, brands = [] } = useBrand()
   const validTabs = ['platforms', 'brandvoice', 'posting', 'schedule', 'billing', 'privacy']
   const requestedTab = searchParams.get('tab')
   const [connections, setConnections] = useState({})
@@ -57,6 +60,8 @@ function SettingsFlow() {
     language:            '',
   })
   const [saveError,    setSaveError]  = useState('')
+  const [brandName, setBrandName] = useState('')
+  const [renaming,  setRenaming]  = useState(false)
   const [saving,       setSaving]     = useState(false)
   const [saved,        setSaved]      = useState(false)
   const [loadingConns, setLoadingConns] = useState(true)
@@ -206,8 +211,7 @@ function SettingsFlow() {
   async function saveSchedule() {
     setScheduleSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('onboarding').upsert({
-      client_id:               user.id,
+    const scheduleRow = {
       linkedin_posting_days:   schedule.LinkedIn.days,
       linkedin_posting_time:   schedule.LinkedIn.time,
       instagram_posting_days:  schedule.Instagram.days,
@@ -215,23 +219,41 @@ function SettingsFlow() {
       twitter_posting_days:    schedule.Twitter.days,
       twitter_posting_time:    schedule.Twitter.time,
       timezone:                schedule.timezone,
-    }, { onConflict: 'client_id' })
+    }
+    // The schedule belongs to a brand. brand_schedules is the source of truth;
+    // onboarding is only kept in step for the default brand (it still feeds
+    // onboarding-time defaults and anything not yet brand-aware).
+    if (writeBrandId) {
+      const { error: schedErr } = await supabase.from('brand_schedules').upsert({
+        brand_id: writeBrandId, client_id: user.id, ...scheduleRow, updated_at: new Date().toISOString(),
+      }, { onConflict: 'brand_id' })
+      if (schedErr) {
+        console.error('Schedule save failed:', schedErr.message)
+        setScheduleSaving(false)
+        alert("Couldn't save the schedule — " + schedErr.message)
+        return
+      }
+    }
+    if (!activeBrandId || brands.find(b => b.id === writeBrandId)?.is_default) {
+      await supabase.from('onboarding').upsert({ client_id: user.id, ...scheduleRow }, { onConflict: 'client_id' })
+    }
     setScheduleSaving(false)
     setScheduleSaved(true)
     setTimeout(() => setScheduleSaved(false), 2500)
   }
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { setBrandName(brands.find(b => b.id === activeBrandId)?.name || '') }, [activeBrandId, brands])
+  useEffect(() => { loadData() }, [writeBrandId])
 
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
     // Load platform connections
-    const { data: accounts } = await supabase
+    const { data: accounts } = await scopeBrand(supabase
       .from('platform_accounts')
-      .select('platform, account_id, expires_at, token_valid')
-      .eq('client_id', user.id)
+      .select('platform, account_id, expires_at, token_valid, brand_id')
+      .eq('client_id', user.id), writeBrandId)
 
     const connMap = {}
     for (const acc of accounts || []) connMap[acc.platform] = acc
@@ -243,11 +265,16 @@ function SettingsFlow() {
     // for anyone who saved before this migration and hasn't touched
     // Settings since (the migration SQL also backfills these, so this
     // fallback is mostly belt-and-suspenders).
-    const { data: onboarding } = await supabase
-      .from('onboarding')
-      .select('linkedin_posting_days, linkedin_posting_time, instagram_posting_days, instagram_posting_time, twitter_posting_days, twitter_posting_time, posting_days, posting_time, timezone')
-      .eq('client_id', user.id)
-      .maybeSingle()
+    const SCHED_COLS = 'linkedin_posting_days, linkedin_posting_time, instagram_posting_days, instagram_posting_time, twitter_posting_days, twitter_posting_time, posting_days, posting_time, timezone'
+    let onboarding = null
+    if (writeBrandId) {
+      const { data } = await supabase.from('brand_schedules').select(SCHED_COLS).eq('brand_id', writeBrandId).maybeSingle()
+      onboarding = data
+    }
+    if (!onboarding) {
+      const { data } = await supabase.from('onboarding').select(SCHED_COLS).eq('client_id', user.id).maybeSingle()
+      onboarding = data
+    }
     if (onboarding) {
       setSchedule({
         LinkedIn: {
@@ -267,10 +294,10 @@ function SettingsFlow() {
     }
 
     // Load brand profile
-    const { data: profile } = await supabase
+    const { data: profile } = await scopeBrand(supabase
       .from('brand_profiles')
       .select('*')
-      .eq('client_id', user.id)
+      .eq('client_id', user.id), writeBrandId)
       .maybeSingle()
 
     if (profile) {
@@ -288,6 +315,24 @@ function SettingsFlow() {
     }
   }
 
+  async function renameBrand() {
+    setRenaming(true)
+    setSaveError('')
+    try {
+      const res  = await fetch('/api/brands', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brand_id: activeBrandId, name: brandName }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Rename failed')
+      window.location.reload()
+    } catch (err) {
+      setSaveError("Couldn't rename — " + err.message)
+      setRenaming(false)
+    }
+  }
+
   async function saveBrand(e) {
     e.preventDefault()
     setSaving(true)
@@ -298,6 +343,7 @@ function SettingsFlow() {
 
     const payload = {
       client_id:           user.id,
+      brand_id:            writeBrandId,
       company_description: brand.company_description,
       target_audience:     brand.target_audience,
       tone:                brand.tone,
@@ -311,7 +357,7 @@ function SettingsFlow() {
     setSaveError('')
     const { error: saveErr } = await supabase
       .from('brand_profiles')
-      .upsert(payload, { onConflict: 'client_id' })
+      .upsert(payload, { onConflict: 'brand_id' })
 
     setSaving(false)
     if (saveErr) {
@@ -566,6 +612,22 @@ function SettingsFlow() {
       {/* ── Brand Voice Tab ───────────────────────────────────────────────── */}
       {activeTab === 'brandvoice' && (
         <form className="animate-in" onSubmit={saveBrand}>
+
+          {activeBrandId && (
+            <BrandSection label="Brand name" hint="Shown in the brand switcher. Does not change how your posts are written." index={0}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={brandName}
+                  onChange={e => setBrandName(e.target.value)}
+                  maxLength={60}
+                  style={{ ...textareaStyle, flex: 1, resize: 'none' }}
+                />
+                <button type="button" disabled={renaming || !brandName.trim()} onClick={renameBrand} className="btn btn-secondary">
+                  {renaming ? 'Saving…' : 'Rename'}
+                </button>
+              </div>
+            </BrandSection>
+          )}
 
           <BrandSection label="Company Description" hint="What does your company do? Who are you?" index={0}>
             <textarea

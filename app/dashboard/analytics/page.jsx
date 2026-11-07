@@ -1,11 +1,16 @@
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
+import { loadBrandContext } from '../../../lib/brand'
+import { MULTI_BRAND_ENABLED } from '../../../lib/featureFlags'
+import { scopeBrand } from '../../../lib/brand-scope'
 
 export default async function AnalyticsPage() {
   const supabase = await createSupabaseServerClient()
 
-  const { data: rows } = await supabase
+  const { data: { session } } = await supabase.auth.getSession()
+  const ctx = session ? await loadBrandContext(supabase, session.user.id) : { activeBrandId: null }
+  const { data: rows } = await scopeBrand(supabase
     .from('post_analytics')
-    .select('*, posts(topic, linkedin_posted_at)')
+    .select('*, posts(topic, linkedin_posted_at)'), MULTI_BRAND_ENABLED ? ctx.activeBrandId : null)
     .order('fetched_at', { ascending: false })
     .limit(100)
 

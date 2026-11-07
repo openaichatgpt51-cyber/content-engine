@@ -3,11 +3,14 @@ import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../lib/supabase'
+import { useBrand } from './BrandProvider'
+import { scopeBrand } from '../lib/brand-scope'
 
 const DISMISS_KEY = 'ce_connect_banner_dismissed'
 
 export default function ConnectPlatformBanner() {
   const pathname = usePathname()
+  const { writeBrandId } = useBrand()
   const [state, setState] = useState(null) // null | 'missing' | 'reconnect'
 
   useEffect(() => {
@@ -21,11 +24,11 @@ export default function ConnectPlatformBanner() {
     // LinkedIn is the only platform that actually posts right now
     // (Instagram is disabled, Twitter is connect-only pre-launch) —
     // that's the one thing worth nagging about.
-    const { data } = await supabase
+    const { data } = await scopeBrand(supabase
       .from('platform_accounts')
       .select('expires_at, token_valid')
       .eq('client_id', user.id)
-      .eq('platform', 'linkedin')
+      .eq('platform', 'linkedin'), writeBrandId)
       .maybeSingle()
 
     if (!data) {

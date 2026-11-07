@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
+import { resolveActiveBrandId } from '../../../lib/brand'
 
 // One lightweight read call per platform to confirm the stored token still
 // works — surfaces a broken connection immediately instead of only finding
@@ -14,10 +15,13 @@ export async function POST(request) {
     const { platform } = await request.json()
     if (!platform) return NextResponse.json({ error: 'platform is required' }, { status: 400 })
 
+    const brandId = await resolveActiveBrandId(supabase, session.user.id)
+
     const { data: account } = await supabaseAdmin
       .from('platform_accounts')
       .select('access_token, account_id')
       .eq('client_id', session.user.id)
+      .eq('brand_id', brandId)
       .eq('platform', platform)
       .maybeSingle()
 
@@ -45,6 +49,7 @@ export async function POST(request) {
         .from('platform_accounts')
         .update({ token_valid: true })
         .eq('client_id', session.user.id)
+        .eq('brand_id', brandId)
         .eq('platform', platform)
       return NextResponse.json({ ok: true })
     }
@@ -55,6 +60,7 @@ export async function POST(request) {
       .from('platform_accounts')
       .update({ token_valid: false })
       .eq('client_id', session.user.id)
+      .eq('brand_id', brandId)
       .eq('platform', platform)
 
     const body = await res.text().catch(() => '')

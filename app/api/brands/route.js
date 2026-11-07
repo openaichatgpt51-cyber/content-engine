@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
+import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { BRAND_COOKIE } from '../../../lib/brand'
 import { MULTI_BRAND_ENABLED } from '../../../lib/featureFlags'
 
@@ -60,4 +61,31 @@ export async function POST(request) {
     secure: process.env.NODE_ENV === 'production', maxAge: 60 * 60 * 24 * 365,
   })
   return res
+}
+
+// Renames a brand the signed-in client owns. Uses the service role with an
+// explicit client_id match so ownership is checked here, not left to a policy.
+export async function PATCH(request) {
+  const supabase = await createSupabaseServerClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
+  const { brand_id, name } = await request.json().catch(() => ({}))
+  const clean = typeof name === 'string' ? name.trim() : ''
+  if (!brand_id || clean.length < 1 || clean.length > 60) {
+    return NextResponse.json({ error: 'Give the brand a name (up to 60 characters).' }, { status: 400 })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('brands')
+    .update({ name: clean, updated_at: new Date().toISOString() })
+    .eq('id', brand_id)
+    .eq('client_id', session.user.id)
+    .select('id')
+  if (error) {
+    console.error('Rename brand failed:', error.message)
+    return NextResponse.json({ error: 'Could not rename the brand.' }, { status: 500 })
+  }
+  if (!data?.length) return NextResponse.json({ error: 'Brand not found.' }, { status: 404 })
+  return NextResponse.json({ success: true })
 }
