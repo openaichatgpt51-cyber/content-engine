@@ -10,94 +10,118 @@ export default function KillSwitch() {
   const [working,  setWorking]  = useState(false)
   const [confirm,  setConfirm]  = useState(false) // showing the pause confirmation
   const [result,   setResult]   = useState(null)  // last action's outcome summary
+  const [error,    setError]    = useState('')    // last action's failure, shown to the user
 
   useEffect(() => { load() }, [])
 
   async function load() {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase
+    if (!user) { setLoading(false); setError('Your session has expired. Please sign in again.'); return }
+    const { data, error: loadErr } = await supabase
       .from('account_settings')
       .select('posting_paused, paused_at')
       .eq('client_id', user.id)
       .maybeSingle()
+    if (loadErr) {
+      // Never show "Posting is active" when we could not actually read the state.
+      console.error('Kill switch: could not load state:', loadErr.message)
+      setError("Couldn't load your posting status. Reload the page before relying on it.")
+    }
     setPaused(Boolean(data?.posting_paused))
     setPausedAt(data?.paused_at || null)
     setLoading(false)
   }
 
+  // Order matters for safety. PAUSE: set the flag first, so anything approved
+  // from now on is held, then pull queued posts back. If the flag cannot be
+  // saved nothing is changed and the user is told. RESUME: clear the flag
+  // first; if that fails the account stays paused (the safe side).
   async function doPause() {
     setWorking(true)
     setConfirm(false)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setWorking(false); return }
+    setError('')
+    setResult(null)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Your session has expired. Please sign in again.')
 
-    // Count what's still recallable (PENDING — hasn't started processing)
-    // vs. what's already out of our hands (IN_PROGRESS — n8n is actively
-    // publishing it right now and there's no cancel endpoint on either
-    // platform's API once that call has been made).
-    const { count: recallable } = await supabase
-      .from('posts')
-      .select('id', { count: 'exact', head: true })
-      .eq('client_id', user.id)
-      .eq('posting_status', 'PENDING')
+      const nowIso = new Date().toISOString()
+      const { error: flagErr } = await supabase
+        .from('account_settings')
+        .upsert({
+          client_id:      user.id,
+          posting_paused: true,
+          paused_at:      nowIso,
+          updated_at:     nowIso,
+        }, { onConflict: 'client_id' })
+      if (flagErr) throw new Error("Couldn't pause posting, so nothing was changed: " + flagErr.message)
 
-    const { count: inFlight } = await supabase
-      .from('posts')
-      .select('id', { count: 'exact', head: true })
-      .eq('client_id', user.id)
-      .eq('posting_status', 'IN_PROGRESS')
+      setPaused(true)
+      setPausedAt(nowIso)
 
-    // Pull every recallable post out of the queue n8n polls
-    await supabase
-      .from('posts')
-      .update({ posting_status: 'HALTED' })
-      .eq('client_id', user.id)
-      .eq('posting_status', 'PENDING')
+      // Posts already being published cannot be recalled.
+      const { count: inFlight, error: inFlightErr } = await supabase
+        .from('posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', user.id)
+        .eq('posting_status', 'IN_PROGRESS')
+      if (inFlightErr) console.error('Kill switch: in-flight count failed:', inFlightErr.message)
 
-    await supabase
-      .from('account_settings')
-      .upsert({
-        client_id:      user.id,
-        posting_paused: true,
-        paused_at:      new Date().toISOString(),
-        updated_at:     new Date().toISOString(),
-      }, { onConflict: 'client_id' })
+      // Pull every queued post out of the queue the scheduler polls; the rows
+      // actually changed are the number recalled.
+      const { data: halted, error: haltErr } = await supabase
+        .from('posts')
+        .update({ posting_status: 'HALTED' })
+        .eq('client_id', user.id)
+        .eq('posting_status', 'PENDING')
+        .select('id')
+      if (haltErr) {
+        throw new Error("Posting is paused for new approvals, but queued posts could NOT be pulled back: " + haltErr.message + ". Press Pause again, or check the Calendar.")
+      }
 
-    setPaused(true)
-    setPausedAt(new Date().toISOString())
-    setResult({ type: 'paused', recalled: recallable || 0, inFlight: inFlight || 0 })
+      setResult({ type: 'paused', recalled: halted?.length || 0, inFlight: inFlightErr ? 0 : (inFlight || 0) })
+    } catch (err) {
+      console.error('Kill switch pause failed:', err.message)
+      setError(err.message)
+    }
     setWorking(false)
   }
 
   async function doResume() {
     setWorking(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setWorking(false); return }
+    setError('')
+    setResult(null)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Your session has expired. Please sign in again.')
 
-    const { count: requeued } = await supabase
-      .from('posts')
-      .select('id', { count: 'exact', head: true })
-      .eq('client_id', user.id)
-      .eq('posting_status', 'HALTED')
+      const { error: flagErr } = await supabase
+        .from('account_settings')
+        .upsert({
+          client_id:      user.id,
+          posting_paused: false,
+          updated_at:     new Date().toISOString(),
+        }, { onConflict: 'client_id' })
+      if (flagErr) throw new Error("Couldn't resume posting, so it is still paused: " + flagErr.message)
 
-    await supabase
-      .from('posts')
-      .update({ posting_status: 'PENDING' })
-      .eq('client_id', user.id)
-      .eq('posting_status', 'HALTED')
+      setPaused(false)
+      setPausedAt(null)
 
-    await supabase
-      .from('account_settings')
-      .upsert({
-        client_id:      user.id,
-        posting_paused: false,
-        updated_at:     new Date().toISOString(),
-      }, { onConflict: 'client_id' })
+      const { data: requeued, error: requeueErr } = await supabase
+        .from('posts')
+        .update({ posting_status: 'PENDING' })
+        .eq('client_id', user.id)
+        .eq('posting_status', 'HALTED')
+        .select('id')
+      if (requeueErr) {
+        throw new Error("Posting is resumed, but held posts could NOT be re-queued: " + requeueErr.message + ". They are still on hold. Press Pause then Resume again to retry.")
+      }
 
-    setPaused(false)
-    setPausedAt(null)
-    setResult({ type: 'resumed', requeued: requeued || 0 })
+      setResult({ type: 'resumed', requeued: requeued?.length || 0 })
+    } catch (err) {
+      console.error('Kill switch resume failed:', err.message)
+      setError(err.message)
+    }
     setWorking(false)
   }
 
@@ -148,6 +172,16 @@ export default function KillSwitch() {
           </button>
         )}
       </div>
+
+      {error && (
+        <div role="alert" style={{
+          marginTop: 16, padding: '12px 14px', borderRadius: 'var(--radius)',
+          background: 'var(--failed-bg)', border: '1px solid var(--failed-border)',
+          color: 'var(--failed)', fontSize: '0.82rem', lineHeight: 1.5,
+        }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       {/* Result summary — the visible in-flight-vs-recalled distinction */}
       {result && (
