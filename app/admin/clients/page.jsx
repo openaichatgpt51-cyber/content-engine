@@ -1,8 +1,9 @@
 import { supabaseAdmin } from '../../../lib/supabase-admin'
+import MaxBrandsControl from './MaxBrandsControl'
 
 export default async function AdminClientsPage() {
   const [{ data: clients }, { data: subs }, { data: posts }, { data: brandRows }] = await Promise.all([
-    supabaseAdmin.from('clients').select('id, created_at, max_brands'),
+    supabaseAdmin.from('clients').select('id, email, created_at, max_brands'),
     supabaseAdmin.from('subscriptions').select('client_id, plan, status, posts_used, posts_limit'),
     supabaseAdmin.from('posts').select('client_id, posting_status, created_at'),
     supabaseAdmin.from('brands').select('client_id'),
@@ -32,6 +33,7 @@ export default async function AdminClientsPage() {
 
     return {
       id: c.id,
+      email: c.email,
       plan: sub?.plan || 'trial',
       status: sub?.status || 'trialing',
       posts_used: sub?.posts_used ?? 0,
@@ -70,10 +72,10 @@ export default async function AdminClientsPage() {
           <tbody>
             {rows.map(r => (
               <tr key={r.id}>
-                <td style={td}><code style={{ fontSize: '0.72rem' }}>{r.id.slice(0, 8)}</code></td>
+                <td style={td}>{r.email || '—'}<div><code style={{ fontSize: '0.68rem', color: 'var(--ink-20)' }}>{r.id.slice(0, 8)}</code></div></td>
                 <td style={td}>{r.plan}</td>
                 <td style={td}>{r.posts_used}/{r.posts_limit}</td>
-                <td style={td}>{r.brands}/{r.maxBrands}</td>
+                <td style={td}><MaxBrandsControl clientId={r.id} brands={r.brands} initialMax={r.maxBrands} /></td>
                 <td style={td}>{r.totalPosts}</td>
                 <td style={td}>{r.postsLast30d}</td>
                 <td style={td}>{r.lastPostAt ? new Date(r.lastPostAt).toLocaleDateString() : 'Never'}</td>
