@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { useBrand } from '../../../components/BrandProvider'
 import { scopeBrand } from '../../../lib/brand-scope'
+import ReferenceMaterial from '../../../components/ReferenceMaterial'
 import { Spinner, Skeleton } from '../../../components/ui'
 import KillSwitch from '../../../components/KillSwitch'
 import UsageMeter from '../../../components/UsageMeter'
@@ -28,7 +29,7 @@ const PLATFORMS = [
     bg:         '#FDF2F8',
     desc:       'Share visual content to your Instagram Business account',
     authPath:   '/api/auth/instagram',
-    comingSoon: true,
+    caveat:     "You can connect now to import your past posts. Publishing to Instagram isn't live yet",
   },
   {
     key:      'twitter',
@@ -38,7 +39,7 @@ const PLATFORMS = [
     bg:       '#F5F5F5',
     desc:     'Post threads and hooks to your X account',
     authPath: '/api/auth/twitter',
-    caveat:   "You can connect now, but posts won't go out until launch — LinkedIn only for now",
+    caveat:   "You can connect now to import your past posts. Publishing to X isn't live yet",
   },
 ]
 
@@ -349,6 +350,8 @@ function SettingsFlow() {
       tone:                brand.tone,
       topics_to_avoid:     brand.topics_to_avoid,
       example_posts:       brand.example_posts.filter(Boolean),
+      brand_image_urls:    brandImages,
+      visual_style_description: visualStyle || null,
       country:             brand.country  || null,
       language:            brand.language || null,
       updated_at:          new Date().toISOString(),
@@ -611,6 +614,7 @@ function SettingsFlow() {
 
       {/* ── Brand Voice Tab ───────────────────────────────────────────────── */}
       {activeTab === 'brandvoice' && (
+        <>
         <form className="animate-in" onSubmit={saveBrand}>
 
           {activeBrandId && (
@@ -830,6 +834,9 @@ function SettingsFlow() {
             )}
           </div>
         </form>
+
+        <ReferenceMaterial />
+        </>
       )}
 
       {/* ── Posting Control Tab ─────────────────────────────────────────── */}
