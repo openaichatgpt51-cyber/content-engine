@@ -15,6 +15,11 @@ export const maxDuration = 60
 
 const LIMIT = 20
 
+// X bills reads to our developer account, so imports are capped per CLIENT
+// (all of their brands together) over a rolling 24 hours. Instagram reads are
+// free and uncapped.
+const X_IMPORTS_PER_DAY = 2
+
 export async function POST(request) {
   try {
     const supabase = await createSupabaseServerClient()
@@ -35,6 +40,24 @@ export async function POST(request) {
       .maybeSingle()
     if (!acct?.access_token) {
       return NextResponse.json({ error: `Connect ${platform === 'twitter' ? 'X' : 'Instagram'} for this brand in Settings → Connections first.` }, { status: 400 })
+    }
+
+    if (platform === 'twitter') {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      const { data: recent, error: logErr } = await supabaseAdmin
+        .from('reference_import_log').select('created_at')
+        .eq('client_id', userId).eq('platform', 'twitter').gte('created_at', since)
+        .order('created_at', { ascending: true })
+      if (logErr) {
+        console.error('Import limit check failed:', logErr.message)
+        return NextResponse.json({ error: "Couldn't check your import allowance, so nothing was imported. Try again in a moment." }, { status: 500 })
+      }
+      if ((recent?.length || 0) >= X_IMPORTS_PER_DAY) {
+        const next = new Date(new Date(recent[0].created_at).getTime() + 24 * 60 * 60 * 1000)
+        return NextResponse.json({
+          error: `X imports are limited to ${X_IMPORTS_PER_DAY} per day. You can import again after ${next.toLocaleString('en-GB', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} (Lagos time). Posts you already imported are still saved.`,
+        }, { status: 429 })
+      }
     }
 
     let rows = []
@@ -70,6 +93,8 @@ export async function POST(request) {
             : `X refused the request (HTTP ${res.status}).`
         return NextResponse.json({ error: msg }, { status: 502 })
       }
+      // X answered, so this read was billed: count it against the allowance.
+      await supabaseAdmin.from('reference_import_log').insert({ client_id: userId, brand_id: brandId, platform: 'twitter' })
       const mediaByKey = Object.fromEntries((body.includes?.media || []).map(m => [m.media_key, m]))
       for (const t of body.data || []) {
         const keys = t.attachments?.media_keys || []
