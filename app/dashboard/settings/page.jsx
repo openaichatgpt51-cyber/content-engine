@@ -617,7 +617,7 @@ function SettingsFlow() {
         <>
         <form className="animate-in" onSubmit={saveBrand}>
 
-          {activeBrandId && (
+          {activeBrandId && brands.length > 1 && (
             <BrandSection label="Brand name" hint="Shown in the brand switcher. Does not change how your posts are written." index={0}>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
