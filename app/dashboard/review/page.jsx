@@ -485,8 +485,13 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
     ].filter(e => e.text && e.text.trim())
 
     if (examples.length) {
+      let exLang = null
+      try {
+        const { data: bp } = await supabase.from('brand_profiles').select('language').eq('brand_id', localPost.brand_id).maybeSingle()
+        exLang = bp?.language || null
+      } catch (e) { /* language is optional */ }
       const { error: exErr } = await supabase.from('approved_examples').insert(
-        examples.map(e => ({ client_id: localPost.client_id, brand_id: localPost.brand_id, platform: e.platform, text: e.text }))
+        examples.map(e => ({ client_id: localPost.client_id, brand_id: localPost.brand_id, platform: e.platform, text: e.text, language: exLang }))
       )
       if (exErr) console.error('Failed to save approved example:', exErr.message)
     }
