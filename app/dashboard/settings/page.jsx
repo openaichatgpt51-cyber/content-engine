@@ -9,6 +9,8 @@ import { Spinner, Skeleton } from '../../../components/ui'
 import KillSwitch from '../../../components/KillSwitch'
 import UsageMeter from '../../../components/UsageMeter'
 import { PLANS } from '../../../lib/plans'
+import { DEFAULT_KIT, KIT_FONTS, KIT_LAYOUTS, sanitizeKit, contrastRatio } from '../../../lib/brand-kit'
+import ImageUploadField from '../../../components/ImageUploadField'
 import { COUNTRIES, LANGUAGES, countryByCode, detectTimeZone, timeZoneOptions } from '../../../lib/locales'
 
 const PLATFORMS = [
@@ -76,6 +78,7 @@ function SettingsFlow() {
     timezone:  'UTC', // replaced by the saved value, or the browser's own timezone, on load
   })
   const [brandImages, setBrandImages] = useState([])           // uploaded URLs
+  const [brandKit, setBrandKit] = useState(DEFAULT_KIT)
   const [visualStyle, setVisualStyle] = useState('')           // analyzed description
   const [imageUploading, setImageUploading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
@@ -313,6 +316,7 @@ function SettingsFlow() {
       })
       setBrandImages(profile.brand_image_urls || [])
       setVisualStyle(profile.visual_style_description || '')
+      setBrandKit(sanitizeKit(profile.brand_kit))
     }
   }
 
@@ -352,6 +356,7 @@ function SettingsFlow() {
       example_posts:       brand.example_posts.filter(Boolean),
       brand_image_urls:    brandImages,
       visual_style_description: visualStyle || null,
+      brand_kit:           sanitizeKit(brandKit),
       country:             brand.country  || null,
       language:            brand.language || null,
       updated_at:          new Date().toISOString(),
@@ -790,6 +795,48 @@ function SettingsFlow() {
                 {visualStyle}
               </div>
             )}
+          </BrandSection>
+
+          <BrandSection label="Brand Kit" hint="Colours, font and logo used when we design your post images" index={6}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 14 }}>
+              {[['primary', 'Primary'], ['secondary', 'Secondary'], ['accent', 'Accent'], ['text', 'Text on image']].map(([key, label]) => (
+                <label key={key} style={{ fontSize: '0.72rem', color: 'var(--ink-20)', fontWeight: 500 }}>
+                  {label}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                    <input type="color" value={brandKit[key]} onChange={e => setBrandKit(k => ({ ...k, [key]: e.target.value.toUpperCase() }))}
+                      style={{ width: 36, height: 32, border: '1px solid var(--fog-60)', borderRadius: 6, padding: 2, background: 'white' }} />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--ink-40)' }}>{brandKit[key]}</span>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 14 }}>
+              <label style={{ fontSize: '0.72rem', color: 'var(--ink-20)', fontWeight: 500 }}>
+                Heading font
+                <select value={brandKit.font} onChange={e => setBrandKit(k => ({ ...k, font: e.target.value }))} style={{ ...selectStyle, marginTop: 4 }}>
+                  {KIT_FONTS.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </label>
+              <label style={{ fontSize: '0.72rem', color: 'var(--ink-20)', fontWeight: 500 }}>
+                Default layout
+                <select value={brandKit.layout} onChange={e => setBrandKit(k => ({ ...k, layout: e.target.value }))} style={{ ...selectStyle, marginTop: 4 }}>
+                  {KIT_LAYOUTS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+                </select>
+              </label>
+            </div>
+            <div style={{ padding: '18px 16px', borderRadius: 'var(--radius-sm)', background: brandKit.primary, color: brandKit.text, fontFamily: `${brandKit.font}, sans-serif`, fontWeight: 700, fontSize: '1.1rem', marginBottom: 6, borderBottom: `4px solid ${brandKit.accent}` }}>
+              Your headline will look like this
+            </div>
+            {contrastRatio(brandKit.primary, brandKit.text) < 4.5 && (
+              <p style={{ fontSize: '0.78rem', color: 'var(--failed)', marginBottom: 10 }}>
+                Text and primary colour are hard to read together. Pick a lighter text colour or a darker primary.
+              </p>
+            )}
+            <ImageUploadField
+              value={brandKit.logo_url ? { url: brandKit.logo_url, name: 'Logo' } : null}
+              onChange={v => setBrandKit(k => ({ ...k, logo_url: v?.url || '' }))}
+              label="Logo (PNG with transparent background works best)"
+            />
           </BrandSection>
 
           {/* Save button */}
