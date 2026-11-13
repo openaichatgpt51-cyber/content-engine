@@ -64,3 +64,5 @@ coverage/
 # Cypress testing videos and screenshots
 cypress/screenshots/
 cypress/videos/
+
+*.zip

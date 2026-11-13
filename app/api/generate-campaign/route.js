@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { rateLimit } from '../../../lib/rate-limit'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
@@ -13,6 +14,8 @@ export async function POST(request) {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const limited = await rateLimit(session.user.id, 'campaign', 10)
+    if (limited) return limited
     const userId = session.user.id
 
     // groups: [{ topic, platforms: ['LinkedIn','Instagram'], tone, isCarousel, slideCount }]

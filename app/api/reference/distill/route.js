@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { rateLimit } from '../../../../lib/rate-limit'
 import { createSupabaseServerClient } from '../../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../../lib/supabase-admin'
 import { resolveActiveBrandId } from '../../../../lib/brand'
@@ -28,6 +29,8 @@ export async function POST() {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ error: 'Your session has expired — please sign in again.' }, { status: 401 })
+    const limited = await rateLimit(session.user.id, 'distill', 20)
+    if (limited) return limited
     const userId = session.user.id
     if (!process.env.OPENAI_API_KEY) return NextResponse.json({ error: 'Style analysis is not configured (missing OPENAI_API_KEY).' }, { status: 500 })
 

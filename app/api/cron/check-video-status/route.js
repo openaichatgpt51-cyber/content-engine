@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isCronAuthorized } from '../../../../lib/cron-auth'
 import { supabaseAdmin } from '../../../../lib/supabase-admin'
 
 // Triggered by Vercel Cron — runs frequently (every 2-3 min recommended,
@@ -10,8 +11,7 @@ import { supabaseAdmin } from '../../../../lib/supabase-admin'
 // confirming against your actual aggregator's real API docs — same
 // caveat as the n8n Submit Video Generation node.
 export async function GET(request) {
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 

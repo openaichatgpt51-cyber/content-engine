@@ -1,13 +1,14 @@
 import { createSupabaseServerClient } from '../../../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
+import { readState, stateFailure, clearStateCookie } from '../../../../../lib/oauth-state'
 import { resolveActiveBrandId } from '../../../../../lib/brand'
 import { fetchPlatformProfile, saveProfile } from '../../../../../lib/platform-profile'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const code     = searchParams.get('code')
-  const state    = searchParams.get('state')
-  const redirect = state ? decodeURIComponent(state) : '/dashboard/settings'
+  const { ok: stateOk, redirect } = readState(request, 'linkedin')
+  if (!stateOk) return stateFailure(request, 'linkedin')
 
   if (!code) {
     return NextResponse.redirect(

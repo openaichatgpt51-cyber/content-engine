@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isCronAuthorized } from '../../../../lib/cron-auth'
 import { supabaseAdmin } from '../../../../lib/supabase-admin'
 
 // Triggered by Vercel Cron (see vercel.json) — daily. Meta's long-lived
@@ -9,8 +10,7 @@ import { supabaseAdmin } from '../../../../lib/supabase-admin'
 export async function GET(request) {
   // Vercel Cron sends this header automatically — confirms the request is
   // actually from Vercel's scheduler, not a public hit on a guessable URL.
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 

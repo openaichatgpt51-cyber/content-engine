@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { createSupabaseServerClient } from '../../../../lib/supabase-server'
+import { createState, setStateCookie } from '../../../../lib/oauth-state'
 
 export async function GET(request) {
+  const supabase = await createSupabaseServerClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return NextResponse.redirect(new URL('/login', request.url))
+
   const { searchParams } = new URL(request.url)
-  const redirect = searchParams.get('redirect') || '/dashboard/settings'
+  const { nonce, state } = createState(searchParams.get('redirect'))
 
   // Generate PKCE code verifier and challenge
   const codeVerifier  = crypto.randomBytes(32).toString('base64url')
@@ -17,7 +23,7 @@ export async function GET(request) {
     client_id:             process.env.TWITTER_CLIENT_ID,
     redirect_uri:          `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/twitter/callback`,
     scope:                 'tweet.read tweet.write users.read offline.access',
-    state:                 encodeURIComponent(redirect),
+    state,
     code_challenge:        codeChallenge,
     code_challenge_method: 'S256',
   })
@@ -33,5 +39,6 @@ export async function GET(request) {
     path:     '/',
   })
 
+  setStateCookie(response, 'twitter', nonce)
   return response
 }
