@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { rateLimit } from '../../../lib/rate-limit'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 
 // Called from the Review Queue's "Change image" panel. Requires an
@@ -9,6 +10,8 @@ export async function POST(request) {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const limited = await rateLimit(session.user.id, 'regen-image', 30)
+    if (limited) return limited
 
     const { query } = await request.json()
     if (!query?.trim()) {
