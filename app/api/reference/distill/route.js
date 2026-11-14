@@ -32,7 +32,7 @@ export async function POST() {
     const limited = await rateLimit(session.user.id, 'distill', 20)
     if (limited) return limited
     const userId = session.user.id
-    if (!process.env.OPENAI_API_KEY) return NextResponse.json({ error: 'Style analysis is not configured (missing OPENAI_API_KEY).' }, { status: 500 })
+    if (!process.env.OPENAI_API_KEY) { console.error('CONFIG: OPENAI_API_KEY is not set (reference/distill)'); return NextResponse.json({ error: 'This feature is temporarily unavailable. Please try again later or contact support.' }, { status: 503 }) }
 
     const brandId = await resolveActiveBrandId(supabase, userId)
 

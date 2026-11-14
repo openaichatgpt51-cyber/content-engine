@@ -131,7 +131,7 @@ export async function POST(request) {
     const locale    = await loadLocaleContext(userId, brandId)
     const n8nUrl    = process.env.N8N_WEBHOOK_URL
     const n8nSecret = process.env.N8N_WEBHOOK_SECRET
-    if (!n8nUrl) return NextResponse.json({ error: 'n8n webhook URL not configured' }, { status: 500 })
+    if (!n8nUrl) { console.error('CONFIG: n8n webhook URL is not set (generate)'); return NextResponse.json({ error: 'This feature is temporarily unavailable. Please try again later or contact support.' }, { status: 503 }) }
 
     const results = await Promise.all(groups.map(async (g) => {
       try {
