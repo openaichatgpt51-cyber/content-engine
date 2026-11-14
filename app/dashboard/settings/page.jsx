@@ -993,40 +993,23 @@ function SettingsFlow() {
             background: 'var(--white)', border: '1px solid var(--fog-60)',
             borderRadius: 'var(--radius-lg)', padding: 24, marginTop: 20,
           }}>
-            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 14 }}>Change plan</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {Object.entries(PLANS).map(([key, plan]) => (
-                <div key={key} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '14px 16px', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius)',
-                }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
-                      {plan.name} — ${plan.price}<span style={{ fontWeight: 400, color: 'var(--ink-20)' }}>/mo</span>
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--ink-20)' }}>
-                      {plan.posts_limit >= 999999 ? 'Unlimited posts' : `${plan.posts_limit} posts/mo`} · {plan.workspaces_limit} workspace{plan.workspaces_limit > 1 ? 's' : ''}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => switchPlan(key)}
-                    disabled={planSwitching === key}
-                    className="press hover-lift"
-                    style={{
-                      padding: '8px 16px', fontSize: '0.8125rem', fontWeight: 500,
-                      background: 'var(--ink)', color: 'var(--white)', border: 'none',
-                      borderRadius: 'var(--radius-sm)', cursor: planSwitching ? 'default' : 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 6,
-                    }}
-                  >
-                    {planSwitching === key && <Spinner size={12} light />}
-                    {planSwitching === key ? 'Redirecting…' : 'Switch'}
-                  </button>
+            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 14 }}>Your plan</h3>
+            <div style={{ padding: '16px 18px', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius)' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: 10 }}>Founder&apos;s Plan</div>
+              <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>₦800,000<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--ink-20)' }}> / month</span></div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--ink-20)' }}>Billed monthly</div>
                 </div>
-              ))}
+                <div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>₦8,400,000<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--ink-20)' }}> / year</span></div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--ink-20)' }}>Billed annually</div>
+                </div>
+              </div>
             </div>
-            <p style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 14 }}>
-              Switching opens Stripe checkout for the new plan. Your current plan stays active until that completes.
+            <p style={{ fontSize: '0.78rem', color: 'var(--ink-20)', marginTop: 14, lineHeight: 1.6 }}>
+              Billing is by invoice. To start, change or ask about your plan, email{' '}
+              <a href="mailto:hello@contentengine.social" style={{ color: 'var(--ink)', textDecoration: 'underline' }}>hello@contentengine.social</a>.
             </p>
           </div>
         </div>
