@@ -29,7 +29,7 @@ export async function POST(request) {
 
     if (!process.env.PIXABAY_API_KEY) {
       console.error('PIXABAY_API_KEY is not set — check Vercel env vars')
-      return NextResponse.json({ error: 'Image search is not configured (missing API key)' }, { status: 500 })
+      return NextResponse.json({ error: 'This feature is temporarily unavailable. Please try again later or contact support.' }, { status: 503 })
     }
 
     const res     = await fetch(`https://pixabay.com/api/?${params}`)
