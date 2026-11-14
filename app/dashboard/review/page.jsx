@@ -1027,12 +1027,12 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
                       Cancel
                     </button>
                     <button className="press" onClick={saveEdit} disabled={saving || charCount > cfg.charLimit} style={{ ...btn, background: charCount > cfg.charLimit ? 'var(--fog-60)' : 'var(--done)', color: charCount > cfg.charLimit ? 'var(--ink-20)' : 'white', border: 'none', fontSize: '0.78rem', padding: '5px 12px' }}>
-                      {saving ? <Spinner light /> : 'Save & Approve'}
+                      {saving ? <Spinner light /> : 'Save changes'}
                     </button>
                   </div>
                 </div>
                 <p style={{ fontSize: '0.72rem', color: 'var(--ink-20)', marginTop: 6 }}>
-                  Saving will approve this post for scheduling.
+                  Saving keeps the post in your queue. Use Approve when you are ready to schedule it.
                 </p>
               </div>
             ) : (

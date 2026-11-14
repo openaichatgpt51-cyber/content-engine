@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../../../lib/supabase-admin'
 import MaxBrandsControl from './MaxBrandsControl'
+import CreateClientForm from './CreateClientForm'
 
 export default async function AdminClientsPage() {
   const [{ data: clients }, { data: subs }, { data: posts }, { data: brandRows }] = await Promise.all([
@@ -55,6 +56,8 @@ export default async function AdminClientsPage() {
       <p style={{ color: 'var(--ink-20)', fontSize: '0.875rem', marginBottom: 24 }}>
         Sorted by activity in the last 30 days — most active first.
       </p>
+
+      <CreateClientForm />
 
       <div style={{ display: 'flex', gap: 16, marginBottom: 28 }}>
         <StatCard label="Total clients" value={rows.length} />

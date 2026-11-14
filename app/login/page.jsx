@@ -220,7 +220,7 @@ async function handleLogin(e) {
           color: 'rgba(255,255,255,0.35)',
           fontSize: '0.8125rem',
         }}>
-          Don't have an account? <Link href="/signup" style={{ color: 'var(--accent-warm)', fontWeight: 500 }}>Sign up</Link>
+          Accounts are created for you by the ContentEngine team. Need access? <a href="mailto:hello@contentengine.social" style={{ color: 'var(--accent-warm)', fontWeight: 500 }}>Get in touch</a>
         </p>
       </div>
     </div>

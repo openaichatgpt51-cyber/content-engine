@@ -29,6 +29,11 @@ export async function middleware(req) {
   const { data: { session } } = await supabase.auth.getSession()
   const { pathname } = req.nextUrl
 
+  // Self-service sign-up is closed: accounts are provisioned by an admin.
+  if (pathname.startsWith('/signup')) {
+    return NextResponse.redirect(new URL('/login', req.url))
+  }
+
   // Public routes
   const isPublic =
     pathname.startsWith('/login') ||
@@ -47,6 +52,13 @@ export async function middleware(req) {
   // All other routes require auth
   if (!session) {
     return NextResponse.redirect(new URL('/login', req.url))
+  }
+
+  // ── Temporary-password gate ──────────────────────────────────────
+  // Admin-provisioned accounts must choose their own password first.
+  if (session.user.user_metadata?.must_change_password === true &&
+      !pathname.startsWith('/change-password') && !pathname.startsWith('/api/')) {
+    return NextResponse.redirect(new URL('/change-password', req.url))
   }
 
   // ── Onboarding gate ──────────────────────────────────────────────
