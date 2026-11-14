@@ -5,6 +5,10 @@ import { PLANS } from '../../../../lib/plans'
 import { supabaseAdmin } from '../../../../lib/supabase-admin'
 
 export async function POST(request) {
+  // Stripe is switched off: customers are invoiced directly. Remove this guard to re-enable.
+  if (process.env.STRIPE_ENABLED !== 'true') {
+    return NextResponse.json({ error: 'Billing is by invoice. Contact hello@contentengine.social.' }, { status: 503 })
+  }
   try {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()

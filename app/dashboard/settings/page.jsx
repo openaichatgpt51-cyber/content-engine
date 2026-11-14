@@ -7,7 +7,6 @@ import { scopeBrand } from '../../../lib/brand-scope'
 import ReferenceMaterial from '../../../components/ReferenceMaterial'
 import { Spinner, Skeleton } from '../../../components/ui'
 import KillSwitch from '../../../components/KillSwitch'
-import UsageMeter from '../../../components/UsageMeter'
 import { PLANS } from '../../../lib/plans'
 import { DEFAULT_KIT, KIT_FONTS, KIT_LAYOUTS, sanitizeKit, contrastRatio } from '../../../lib/brand-kit'
 import ImageUploadField from '../../../components/ImageUploadField'
@@ -987,7 +986,7 @@ function SettingsFlow() {
       {/* ── Plan & Billing Tab ───────────────────────────────────────────── */}
       {activeTab === 'billing' && (
         <div className="animate-in" style={{ maxWidth: 560 }}>
-          <UsageMeter />
+          {/* Usage meter hidden while accounts are invoiced */}
 
           <div style={{
             background: 'var(--white)', border: '1px solid var(--fog-60)',
