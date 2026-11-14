@@ -1,111 +1,90 @@
+import Link from 'next/link'
+import { requireAdminPage } from '../../lib/admin/auth'
+import { loadTodayItems } from '../../lib/admin/data'
+import { formatNaira, formatWhen } from '../../lib/admin/rules'
 import { supabaseAdmin } from '../../lib/supabase-admin'
 
-export default async function AdminSystemHealthPage() {
-  // Deliberately uses supabaseAdmin (service role) — this page needs to
-  // see across ALL clients, which normal RLS-scoped queries can't do.
-  // Safe specifically because middleware + the layout above already
-  // confirmed the requesting user is_admin before this ever renders.
+const FILTERS = [
+  ['all', 'All'], ['leads', 'Leads'], ['failed', 'Failed'], ['stuck', 'Stuck'],
+  ['connections', 'Connections'], ['waiting', 'Waiting'], ['money', 'Overdue'], ['quiet', 'Quiet'],
+]
 
-  const [{ data: failedPosts }, { data: recentErrors }, { data: badTokens }, { count: totalClients }, { count: activeToday }] = await Promise.all([
-    supabaseAdmin.from('posts').select('id, topic, client_id, posting_status, updated_at').in('posting_status', ['FAILED', 'PARTIAL']).order('updated_at', { ascending: false }).limit(20),
-    supabaseAdmin.from('error_logs').select('id, client_id, node_name, platform, error_message, created_at').order('created_at', { ascending: false }).limit(30),
-    supabaseAdmin.from('platform_accounts').select('client_id, platform, token_valid, expires_at').or('token_valid.eq.false,expires_at.lte.' + new Date(Date.now() + 7 * 86_400_000).toISOString()),
-    supabaseAdmin.from('clients').select('id', { count: 'exact', head: true }),
-    supabaseAdmin.from('posts').select('client_id', { count: 'exact', head: true }).gte('created_at', new Date(Date.now() - 24 * 3600_000).toISOString()),
-  ])
+export default async function AdminToday({ searchParams }) {
+  const admin = await requireAdminPage()
+  const now = new Date()
+  const { items, stats } = await loadTodayItems(admin, now)
+  const filter = FILTERS.some(([k]) => k === searchParams?.filter) ? searchParams.filter : 'all'
+  const shown = filter === 'all' ? items : items.filter(i => i.kind === filter)
+  const count = k => (k === 'all' ? items.length : items.filter(i => i.kind === k).length)
+
+  const { data: recent } = await supabaseAdmin
+    .from('admin_audit_log').select('id, at, action, reason, admin_id, client_id').order('at', { ascending: false }).limit(5)
 
   return (
-    <div style={{ maxWidth: 1000 }}>
-      <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)', marginBottom: 24 }}>System Health</h1>
+    <>
+      <header className="ad-head">
+        <div className="ad-stack" style={{ gap: 4 }}>
+          <p className="ad-eyebrow">{formatWhen(now.toISOString())}</p>
+          <h1 className="ad-h1">{items.length === 0 ? 'Nothing needs you right now' : `${items.length} thing${items.length > 1 ? 's' : ''} need${items.length > 1 ? '' : 's'} you`}</h1>
+        </div>
+        {admin.role === 'owner' && <Link href="/admin/clients/new" className="ad-btn primary">+ New client</Link>}
+      </header>
 
-      <div style={{ display: 'flex', gap: 16, marginBottom: 32 }}>
-        <StatCard label="Total clients" value={totalClients ?? 0} />
-        <StatCard label="Posts created (24h)" value={activeToday ?? 0} />
-        <StatCard label="Failed/partial posts" value={failedPosts?.length ?? 0} accent={failedPosts?.length > 0 ? 'var(--failed)' : undefined} />
-        <StatCard label="Connections needing attention" value={badTokens?.length ?? 0} accent={badTokens?.length > 0 ? '#B45309' : undefined} />
+      <section aria-label="At a glance" className="ad-stats">
+        <div className="ad-card ad-stat"><span className="ad-stat-label">Clients live</span><span className="ad-stat-value">{stats.clientsLive}</span><span className="ad-small ad-muted">{stats.paused} paused · {stats.disabled} disabled or offboarded</span></div>
+        <div className="ad-card ad-stat"><span className="ad-stat-label">Approved and queued</span><span className="ad-stat-value">{stats.queued}</span><span className="ad-small ad-muted">Publishing live on {stats.liveOnly.join(', ')} only</span></div>
+        <div className={`ad-card ad-stat ${stats.failures ? 'bad' : ''}`}><span className="ad-stat-label">Failed or stuck posts</span><span className="ad-stat-value">{stats.failures}</span></div>
+        <div className={`ad-card ad-stat ${stats.overdueCount ? 'warn' : ''}`}><span className="ad-stat-label">Overdue invoices</span><span className="ad-stat-value">{admin.role === 'owner' ? formatNaira(stats.overdueAmount) : `${stats.overdueCount} client${stats.overdueCount === 1 ? '' : 's'}`}</span><span className="ad-small ad-muted">{admin.role === 'owner' ? `${stats.overdueCount} client${stats.overdueCount === 1 ? '' : 's'}` : 'An Owner follows up'}</span></div>
+      </section>
+
+      <div className="ad-split">
+        <section aria-label="Needs action" className="ad-card flush ad-grow">
+          <div className="ad-card-head">
+            <h2 className="ad-h2">Needs action</h2>
+            <nav aria-label="Filter" className="ad-pills">
+              {FILTERS.map(([k, label]) => (
+                <Link key={k} href={k === 'all' ? '/admin' : `/admin?filter=${k}`} className="ad-pill" aria-current={filter === k ? 'page' : undefined}>
+                  {label} <span className="ad-muted">{count(k)}</span>
+                </Link>
+              ))}
+            </nav>
+          </div>
+          {shown.length === 0 ? (
+            <div className="ad-empty"><strong>Nothing here needs you</strong><span className="ad-muted">This list refreshes each time you open the page.</span></div>
+          ) : (
+            <ul className="ad-list">
+              {shown.map(i => (
+                <li key={i.id} className="ad-item">
+                  <span className={`ad-badge ${i.severity}`} style={{ minWidth: 92, justifyContent: 'center' }}>{i.badge}</span>
+                  <div className="ad-item-body">
+                    <span className="ad-item-title">{i.title}</span>
+                    <span className="ad-item-meta">{i.meta}</span>
+                  </div>
+                  {i.age && <span className="ad-small ad-muted" style={{ whiteSpace: 'nowrap' }}>{i.age}</span>}
+                  <Link href={i.href} className="ad-btn primary">{i.cta}</Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <aside className="ad-side ad-card ad-stack" aria-label="Recent admin activity">
+          <div className="ad-row" style={{ justifyContent: 'space-between' }}>
+            <h2 className="ad-h2">Recent admin activity</h2>
+            <Link href="/admin/audit" className="ad-small ad-strong">Audit log</Link>
+          </div>
+          {(recent || []).length === 0 ? <p className="ad-muted ad-small" style={{ margin: 0 }}>No admin actions yet.</p> : (
+            <ol className="ad-list ad-stack">
+              {recent.map(r => (
+                <li key={r.id}>
+                  <div style={{ fontSize: 14 }}><b>{r.action.replace(/[._]/g, ' ')}</b></div>
+                  <div className="ad-small ad-muted">{r.reason ? `“${r.reason}” · ` : ''}{formatWhen(r.at)}</div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </aside>
       </div>
-
-      <Section title="Failed / Partial Posts">
-        {!failedPosts?.length ? <Empty text="No failed posts right now." /> : (
-          <Table headers={['Topic', 'Client', 'Status', 'When']}>
-            {failedPosts.map(p => (
-              <tr key={p.id}>
-                <td style={td}>{p.topic}</td>
-                <td style={td}><code style={{ fontSize: '0.72rem' }}>{p.client_id?.slice(0, 8)}</code></td>
-                <td style={td}><StatusBadge status={p.posting_status} /></td>
-                <td style={td}>{new Date(p.updated_at).toLocaleString()}</td>
-              </tr>
-            ))}
-          </Table>
-        )}
-      </Section>
-
-      <Section title="Platform Connections Needing Attention">
-        {!badTokens?.length ? <Empty text="All connections healthy." /> : (
-          <Table headers={['Client', 'Platform', 'Issue']}>
-            {badTokens.map((t, i) => (
-              <tr key={i}>
-                <td style={td}><code style={{ fontSize: '0.72rem' }}>{t.client_id?.slice(0, 8)}</code></td>
-                <td style={td}>{t.platform}</td>
-                <td style={td}>{t.token_valid === false ? 'Invalid token' : 'Expiring within 7 days'}</td>
-              </tr>
-            ))}
-          </Table>
-        )}
-      </Section>
-
-      <Section title="Recent Errors (all clients)">
-        {!recentErrors?.length ? <Empty text="No errors logged." /> : (
-          <Table headers={['Node', 'Platform', 'Client', 'Message', 'When']}>
-            {recentErrors.map(e => (
-              <tr key={e.id}>
-                <td style={td}>{e.node_name}</td>
-                <td style={td}>{e.platform || '—'}</td>
-                <td style={td}><code style={{ fontSize: '0.72rem' }}>{e.client_id?.slice(0, 8)}</code></td>
-                <td style={{ ...td, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.error_message}</td>
-                <td style={td}>{new Date(e.created_at).toLocaleString()}</td>
-              </tr>
-            ))}
-          </Table>
-        )}
-      </Section>
-    </div>
+    </>
   )
 }
-
-function StatCard({ label, value, accent }) {
-  return (
-    <div style={{ flex: 1, padding: '16px 18px', background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-lg)' }}>
-      <div style={{ fontSize: '1.5rem', fontWeight: 700, fontFamily: 'var(--font-display)', color: accent || 'var(--ink)' }}>{value}</div>
-      <div style={{ fontSize: '0.78rem', color: 'var(--ink-40)', marginTop: 2 }}>{label}</div>
-    </div>
-  )
-}
-function Section({ title, children }) {
-  return (
-    <div style={{ marginBottom: 28 }}>
-      <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--ink)', marginBottom: 10 }}>{title}</h2>
-      {children}
-    </div>
-  )
-}
-function Table({ headers, children }) {
-  return (
-    <div style={{ background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
-        <thead><tr>{headers.map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
-  )
-}
-function Empty({ text }) {
-  return <div style={{ padding: '24px', textAlign: 'center', color: 'var(--ink-20)', fontSize: '0.875rem', background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-lg)' }}>{text}</div>
-}
-function StatusBadge({ status }) {
-  const color = status === 'FAILED' ? 'var(--failed)' : '#B45309'
-  return <span style={{ color, fontWeight: 500 }}>{status}</span>
-}
-
-const th = { textAlign: 'left', padding: '10px 14px', fontSize: '0.72rem', color: 'var(--ink-20)', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '1px solid var(--fog-60)' }
-const td = { padding: '10px 14px', borderBottom: '1px solid var(--fog)', color: 'var(--ink)' }
