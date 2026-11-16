@@ -618,6 +618,42 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
     await logVoiceEdit(cfg.field, cfg.platform, original, draftText)
   }
 
+  // ── COPY FOR COMPANY PAGE ─────────────────────────────────────────────────
+  // Manual route for LinkedIn Company Pages: copies the caption to the clipboard
+  // and downloads the image(s), so the post can be pasted into the Page's
+  // "Start a post" box. Nothing is published and the post's status is untouched.
+  async function copyForCompanyPage() {
+    const text = (editing ? draftText : currentText) || ''
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      showMsg('Could not copy the text — select it and copy manually.', 'error')
+      return
+    }
+    const urls = isCarouselPost ? sortedSlides.map(sl => sl.image_url).filter(Boolean) : (imageUrl ? [imageUrl] : [])
+    let failed = 0
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        const res = await fetch(urls[i])
+        if (!res.ok) throw new Error('bad status')
+        const blob = await res.blob()
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = urls.length > 1 ? `slide-${i + 1}.png` : 'post-image.png'
+        document.body.appendChild(a); a.click(); a.remove()
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+      } catch {
+        failed++
+        window.open(urls[i], '_blank', 'noopener')
+      }
+    }
+    showMsg(
+      failed
+        ? 'Text copied. Some images opened in new tabs — save them from there.'
+        : urls.length ? 'Text copied and image downloaded. Paste into your Company Page post.' : 'Text copied. Paste into your Company Page post.'
+    )
+  }
+
   // ── RESCHEDULE ────────────────────────────────────────────────────────────
   async function reschedule(field, value) {
     const iso = new Date(value).toISOString()
@@ -1055,6 +1091,18 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
                     background: 'var(--fog)', fontFamily: 'var(--font-body)',
                   }}>
                     ✏️ Edit {tab === 'linkedin' ? 'LinkedIn' : tab === 'instagram' ? 'Instagram' : 'X'} copy
+                  </button>
+                )}
+                {currentText && tab === 'linkedin' && (
+                  <button className="press hover-lift" onClick={copyForCompanyPage} title="Copies the text and downloads the image so you can post to a Company Page by hand" style={{
+                    fontSize: '0.78rem', color: 'var(--ink-40)', marginTop: 8,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    cursor: 'pointer', padding: '5px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--fog-60)',
+                    background: 'var(--fog)', fontFamily: 'var(--font-body)',
+                  }}>
+                    📋 Copy for Company Page
                   </button>
                 )}
               </div>
