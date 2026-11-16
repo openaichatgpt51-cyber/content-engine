@@ -79,11 +79,20 @@ Return ONLY a JSON array of ${n} strings, no markdown, no explanation: ["topic 1
       const parsed = JSON.parse(raw)
       // Model might wrap the array in an object depending on how it
       // interprets response_format — handle both shapes defensively.
-      topics = Array.isArray(parsed) ? parsed : (parsed.topics || Object.values(parsed)[0] || [])
+      let raw0 = Array.isArray(parsed) ? parsed : (parsed.topics ?? Object.values(parsed)[0] ?? [])
+      // The model sometimes returns one string (newline-separated, maybe numbered)
+      // instead of an array — spreading that later turns it into single characters.
+      if (typeof raw0 === 'string') raw0 = raw0.split('\n')
+      if (!Array.isArray(raw0)) raw0 = Object.values(raw0 || {})
+      topics = raw0
+        .map(t => (typeof t === 'string' ? t : (t && (t.topic || t.title)) || ''))
+        .map(t => t.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim())
+        .filter(t => t.length > 12)
     } catch {
       return NextResponse.json({ error: 'Could not parse suggested topics — try again' }, { status: 502 })
     }
 
+    if (!topics.length) return NextResponse.json({ error: 'Could not read the suggested topics — try again' }, { status: 502 })
     return NextResponse.json({ topics: topics.slice(0, n) })
 
   } catch (err) {

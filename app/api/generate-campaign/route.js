@@ -5,6 +5,10 @@ import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
 import { loadLocaleContext } from '../../../lib/locale-context'
 import { resolveActiveBrandId } from '../../../lib/brand'
 
+// Each post takes ~2 min in n8n and posts run one after another, so this
+// needs the longest duration the Vercel plan allows (300s on Pro; Hobby caps lower).
+export const maxDuration = 300
+
 const N8N_WEBHOOK_URL    = process.env.N8N_WEBHOOK_URL
 const N8N_WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET
 

@@ -40,7 +40,7 @@ jobs:
         run: npm ci   # or: pip install -r requirements.txt, etc.
 
       - name: Run existing suite
-        run: npm test -- --ci   # or: pytest, etc.
+        run: npm test   # vitest (lib/__tests__); vitest has no --ci flag
       # -------------------------------------------------------
 
   adversarial-qa:

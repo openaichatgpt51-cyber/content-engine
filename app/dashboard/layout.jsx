@@ -32,7 +32,7 @@ export default async function DashboardLayout({ children }) {
       brandCtx.activeBrandId
     ),
     getNotifications(supabase, brandCtx.activeBrandId),
-    session ? supabase.from('clients').select('is_admin').eq('id', session.user.id).maybeSingle() : { data: null },
+    session ? supabase.from('admin_users').select('role').eq('user_id', session.user.id).maybeSingle() : { data: null },
   ])
 
   return (
@@ -42,7 +42,7 @@ export default async function DashboardLayout({ children }) {
         userEmail={session?.user?.email}
         pendingCount={pendingCount || 0}
         notificationCount={notifications.length}
-        isAdmin={!!client?.is_admin}
+        isAdmin={!!client?.role}
       />
       <main className="ce-main" style={{
         flex: 1,

@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 // import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
@@ -13,6 +13,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error,    setError]    = useState('')
   const [loading,  setLoading]  = useState(false)
+
+  // Shown after middleware signs out a disabled account.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('disabled') === '1') {
+      setError('This account has been disabled. Contact ContentEngine at hello@contentengine.social if you think this is a mistake.')
+    }
+  }, [])
 
   // async function handleLogin(e) {
   //   e.preventDefault()
@@ -220,7 +227,7 @@ async function handleLogin(e) {
           color: 'rgba(255,255,255,0.35)',
           fontSize: '0.8125rem',
         }}>
-          Don't have an account? <Link href="/signup" style={{ color: 'var(--accent-warm)', fontWeight: 500 }}>Sign up</Link>
+          Accounts are set up by ContentEngine. Need access? <a href="mailto:hello@contentengine.social" style={{ color: 'var(--accent-warm)', fontWeight: 500 }}>Contact us</a>
         </p>
       </div>
     </div>

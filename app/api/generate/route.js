@@ -89,12 +89,12 @@ export async function POST(request) {
     // ── Batch usage limit check — each group counts as one post ─────────
     // Admins are exempt: they're testing/operating the system, not a
     // metered customer, and shouldn't be able to lock themselves out.
-    const { data: clientRow } = await supabaseAdmin
-      .from('clients')
-      .select('is_admin')
-      .eq('id', userId)
+    const { data: adminRow } = await supabaseAdmin
+      .from('admin_users')
+      .select('role')
+      .eq('user_id', userId)
       .maybeSingle()
-    const isAdmin = !!clientRow?.is_admin
+    const isAdmin = !!adminRow?.role
 
     const { data: subRow } = await supabaseAdmin
       .from('subscriptions')
