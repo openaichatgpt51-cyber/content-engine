@@ -409,13 +409,13 @@ function SettingsFlow() {
       </div>
 
       {/* Tab nav */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 28, borderBottom: '1px solid var(--fog-60)' }}>
+      <div className="settings-tabs" style={{ display: 'flex', gap: 0, marginBottom: 28, borderBottom: '1px solid var(--fog-60)' }}>
         {[
           { key: 'platforms',  label: 'Platform Connections' },
           { key: 'brandvoice', label: 'Brand Voice' },
           { key: 'posting',    label: 'Posting Control' },
           { key: 'schedule',   label: 'Posting Schedule' },
-          { key: 'billing',    label: 'Plan & Billing' },
+          { key: 'billing',    label: 'Plan' },
           { key: 'privacy',    label: 'Privacy & Data' },
         ].map(t => (
           <button
@@ -985,54 +985,27 @@ function SettingsFlow() {
       )}
 
       {/* ── Plan & Billing Tab ───────────────────────────────────────────── */}
+      {/* Self-serve Stripe plans are switched off while clients are invoiced
+          directly in naira. The old $ plan picker lives in git history; bring
+          it back when Stripe billing returns. */}
       {activeTab === 'billing' && (
         <div className="animate-in" style={{ maxWidth: 560 }}>
-          <UsageMeter />
-
           <div style={{
             background: 'var(--white)', border: '1px solid var(--fog-60)',
-            borderRadius: 'var(--radius-lg)', padding: 24, marginTop: 20,
+            borderRadius: 'var(--radius)', padding: '22px 24px',
           }}>
-            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: 14 }}>Change plan</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {Object.entries(PLANS).map(([key, plan]) => (
-                <div key={key} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '14px 16px', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius)',
-                }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
-                      {plan.name} — ${plan.price}<span style={{ fontWeight: 400, color: 'var(--ink-20)' }}>/mo</span>
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--ink-20)' }}>
-                      {plan.posts_limit >= 999999 ? 'Unlimited posts' : `${plan.posts_limit} posts/mo`} · {plan.workspaces_limit} workspace{plan.workspaces_limit > 1 ? 's' : ''}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => switchPlan(key)}
-                    disabled={planSwitching === key}
-                    className="press hover-lift"
-                    style={{
-                      padding: '8px 16px', fontSize: '0.8125rem', fontWeight: 500,
-                      background: 'var(--ink)', color: 'var(--white)', border: 'none',
-                      borderRadius: 'var(--radius-sm)', cursor: planSwitching ? 'default' : 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 6,
-                    }}
-                  >
-                    {planSwitching === key && <Spinner size={12} light />}
-                    {planSwitching === key ? 'Redirecting…' : 'Switch'}
-                  </button>
-                </div>
-              ))}
-            </div>
-            <p style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginTop: 14 }}>
-              Switching opens Stripe checkout for the new plan. Your current plan stays active until that completes.
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 8 }}>Your plan</h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--ink-60)', lineHeight: 1.6, marginBottom: 12 }}>
+              Your ContentEngine plan is billed by invoice. You’ll receive each invoice directly from us.
+            </p>
+            <p style={{ fontSize: '0.875rem', color: 'var(--ink-60)', lineHeight: 1.6 }}>
+              To change your plan, add a brand or ask about an invoice, email{' '}
+              <a href="mailto:hello@contentengine.social" style={{ color: 'var(--ink)', fontWeight: 600 }}>hello@contentengine.social</a>.
             </p>
           </div>
         </div>
       )}
 
-      {/* ── Privacy & Data Tab ───────────────────────────────────────────── */}
       {activeTab === 'privacy' && (
         <div className="animate-in" style={{ maxWidth: 560 }}>
           <div style={{

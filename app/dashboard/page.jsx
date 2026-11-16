@@ -333,7 +333,7 @@ function DashboardFlow() {
             Content Calendar
           </h1>
           <p style={{ color: 'var(--ink-20)', fontSize: '0.875rem', marginTop: 4 }}>
-            {posts.length} posts scheduled · {stats.review} awaiting review
+            {posts.length} posts on the calendar · {stats.review} awaiting review
           </p>
         </div>
         <Link href="/dashboard/new-post" className="press hover-lift" style={{
@@ -382,14 +382,14 @@ function DashboardFlow() {
       </div>
 
       {/* Platform filter + month nav */}
-      <div style={{
+      <div className="cal-toolbar" style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         marginBottom: 20,
       }}>
         {/* Platform pills */}
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div className="cal-pills" style={{ display: 'flex', gap: 6 }}>
           {PLATFORMS.map(p => (
             <button key={p} className="press" onClick={() => setPlatform(p)} style={{
               padding: '6px 14px',
@@ -613,7 +613,7 @@ function DashboardFlow() {
             justifyContent: 'flex-end',
           }}
         >
-          <div className="slide-in-right" style={{
+          <div className="slide-in-right post-drawer" style={{
             width: 400,
             height: '100vh',
             background: 'var(--white)',

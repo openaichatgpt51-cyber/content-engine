@@ -44,9 +44,10 @@ export default async function DashboardLayout({ children }) {
         notificationCount={notifications.length}
         isAdmin={!!client?.role}
       />
-      <main style={{
+      <main className="ce-main" style={{
         flex: 1,
         marginLeft: 220,
+        minWidth: 0,
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
