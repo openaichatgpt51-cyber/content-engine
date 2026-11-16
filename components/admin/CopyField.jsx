@@ -7,13 +7,13 @@ export default function CopyField({ label, value, multiline = false }) {
     try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 2500) } catch { /* user can select manually */ }
   }
   return (
-    <label className="ad-field">
+    <label className="ops-field">
       {label}
-      <div className="ad-row" style={{ alignItems: 'stretch' }}>
+      <div className="ops-row" style={{ alignItems: 'stretch' }}>
         {multiline
-          ? <textarea readOnly className="ad-textarea" rows={5} value={value} style={{ flex: '1 1 280px', background: '#FAFAF8' }} />
-          : <input readOnly className="ad-input" value={value} style={{ flex: '1 1 280px', background: '#FAFAF8' }} />}
-        <button type="button" className="ad-btn primary" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+          ? <textarea readOnly className="ops-textarea" rows={5} value={value} style={{ flex: '1 1 280px', background: '#FAFAF8' }} />
+          : <input readOnly className="ops-input" value={value} style={{ flex: '1 1 280px', background: '#FAFAF8' }} />}
+        <button type="button" className="ops-btn primary" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
       </div>
     </label>
   )

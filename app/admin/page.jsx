@@ -22,63 +22,63 @@ export default async function AdminToday({ searchParams }) {
 
   return (
     <>
-      <header className="ad-head">
-        <div className="ad-stack" style={{ gap: 4 }}>
-          <p className="ad-eyebrow">{formatWhen(now.toISOString())}</p>
-          <h1 className="ad-h1">{items.length === 0 ? 'Nothing needs you right now' : `${items.length} thing${items.length > 1 ? 's' : ''} need${items.length > 1 ? '' : 's'} you`}</h1>
+      <header className="ops-head">
+        <div className="ops-stack" style={{ gap: 4 }}>
+          <p className="ops-eyebrow">{formatWhen(now.toISOString())}</p>
+          <h1 className="ops-h1">{items.length === 0 ? 'Nothing needs you right now' : `${items.length} thing${items.length > 1 ? 's' : ''} need${items.length > 1 ? '' : 's'} you`}</h1>
         </div>
-        {admin.role === 'owner' && <Link href="/admin/clients/new" className="ad-btn primary">+ New client</Link>}
+        {admin.role === 'owner' && <Link href="/admin/clients/new" className="ops-btn primary">+ New client</Link>}
       </header>
 
-      <section aria-label="At a glance" className="ad-stats">
-        <div className="ad-card ad-stat"><span className="ad-stat-label">Clients live</span><span className="ad-stat-value">{stats.clientsLive}</span><span className="ad-small ad-muted">{stats.paused} paused · {stats.disabled} disabled or offboarded</span></div>
-        <div className="ad-card ad-stat"><span className="ad-stat-label">Approved and queued</span><span className="ad-stat-value">{stats.queued}</span><span className="ad-small ad-muted">Publishing live on {stats.liveOnly.join(', ')} only</span></div>
-        <div className={`ad-card ad-stat ${stats.failures ? 'bad' : ''}`}><span className="ad-stat-label">Failed or stuck posts</span><span className="ad-stat-value">{stats.failures}</span></div>
-        <div className={`ad-card ad-stat ${stats.overdueCount ? 'warn' : ''}`}><span className="ad-stat-label">Overdue invoices</span><span className="ad-stat-value">{admin.role === 'owner' ? formatNaira(stats.overdueAmount) : `${stats.overdueCount} client${stats.overdueCount === 1 ? '' : 's'}`}</span><span className="ad-small ad-muted">{admin.role === 'owner' ? `${stats.overdueCount} client${stats.overdueCount === 1 ? '' : 's'}` : 'An Owner follows up'}</span></div>
+      <section aria-label="At a glance" className="ops-stats">
+        <div className="ops-card ops-stat"><span className="ops-stat-label">Clients live</span><span className="ops-stat-value">{stats.clientsLive}</span><span className="ops-small ops-muted">{stats.paused} paused · {stats.disabled} disabled or offboarded</span></div>
+        <div className="ops-card ops-stat"><span className="ops-stat-label">Approved and queued</span><span className="ops-stat-value">{stats.queued}</span><span className="ops-small ops-muted">Publishing live on {stats.liveOnly.join(', ')} only</span></div>
+        <div className={`ops-card ops-stat ${stats.failures ? 'bad' : ''}`}><span className="ops-stat-label">Failed or stuck posts</span><span className="ops-stat-value">{stats.failures}</span></div>
+        <div className={`ops-card ops-stat ${stats.overdueCount ? 'warn' : ''}`}><span className="ops-stat-label">Overdue invoices</span><span className="ops-stat-value">{admin.role === 'owner' ? formatNaira(stats.overdueAmount) : `${stats.overdueCount} client${stats.overdueCount === 1 ? '' : 's'}`}</span><span className="ops-small ops-muted">{admin.role === 'owner' ? `${stats.overdueCount} client${stats.overdueCount === 1 ? '' : 's'}` : 'An Owner follows up'}</span></div>
       </section>
 
-      <div className="ad-split">
-        <section aria-label="Needs action" className="ad-card flush ad-grow">
-          <div className="ad-card-head">
-            <h2 className="ad-h2">Needs action</h2>
-            <nav aria-label="Filter" className="ad-pills">
+      <div className="ops-split">
+        <section aria-label="Needs action" className="ops-card flush ops-grow">
+          <div className="ops-card-head">
+            <h2 className="ops-h2">Needs action</h2>
+            <nav aria-label="Filter" className="ops-pills">
               {FILTERS.map(([k, label]) => (
-                <Link key={k} href={k === 'all' ? '/admin' : `/admin?filter=${k}`} className="ad-pill" aria-current={filter === k ? 'page' : undefined}>
-                  {label} <span className="ad-muted">{count(k)}</span>
+                <Link key={k} href={k === 'all' ? '/admin' : `/admin?filter=${k}`} className="ops-pill" aria-current={filter === k ? 'page' : undefined}>
+                  {label} <span className="ops-muted">{count(k)}</span>
                 </Link>
               ))}
             </nav>
           </div>
           {shown.length === 0 ? (
-            <div className="ad-empty"><strong>Nothing here needs you</strong><span className="ad-muted">This list refreshes each time you open the page.</span></div>
+            <div className="ops-empty"><strong>Nothing here needs you</strong><span className="ops-muted">This list refreshes each time you open the page.</span></div>
           ) : (
-            <ul className="ad-list">
+            <ul className="ops-list">
               {shown.map(i => (
-                <li key={i.id} className="ad-item">
-                  <span className={`ad-badge ${i.severity}`} style={{ minWidth: 92, justifyContent: 'center' }}>{i.badge}</span>
-                  <div className="ad-item-body">
-                    <span className="ad-item-title">{i.title}</span>
-                    <span className="ad-item-meta">{i.meta}</span>
+                <li key={i.id} className="ops-item">
+                  <span className={`ops-badge ${i.severity}`} style={{ minWidth: 92, justifyContent: 'center' }}>{i.badge}</span>
+                  <div className="ops-item-body">
+                    <span className="ops-item-title">{i.title}</span>
+                    <span className="ops-item-meta">{i.meta}</span>
                   </div>
-                  {i.age && <span className="ad-small ad-muted" style={{ whiteSpace: 'nowrap' }}>{i.age}</span>}
-                  <Link href={i.href} className="ad-btn primary">{i.cta}</Link>
+                  {i.age && <span className="ops-small ops-muted" style={{ whiteSpace: 'nowrap' }}>{i.age}</span>}
+                  <Link href={i.href} className="ops-btn primary">{i.cta}</Link>
                 </li>
               ))}
             </ul>
           )}
         </section>
 
-        <aside className="ad-side ad-card ad-stack" aria-label="Recent admin activity">
-          <div className="ad-row" style={{ justifyContent: 'space-between' }}>
-            <h2 className="ad-h2">Recent admin activity</h2>
-            <Link href="/admin/audit" className="ad-small ad-strong">Audit log</Link>
+        <aside className="ops-side ops-card ops-stack" aria-label="Recent admin activity">
+          <div className="ops-row" style={{ justifyContent: 'space-between' }}>
+            <h2 className="ops-h2">Recent admin activity</h2>
+            <Link href="/admin/audit" className="ops-small ops-strong">Audit log</Link>
           </div>
-          {(recent || []).length === 0 ? <p className="ad-muted ad-small" style={{ margin: 0 }}>No admin actions yet.</p> : (
-            <ol className="ad-list ad-stack">
+          {(recent || []).length === 0 ? <p className="ops-muted ops-small" style={{ margin: 0 }}>No admin actions yet.</p> : (
+            <ol className="ops-list ops-stack">
               {recent.map(r => (
                 <li key={r.id}>
                   <div style={{ fontSize: 14 }}><b>{r.action.replace(/[._]/g, ' ')}</b></div>
-                  <div className="ad-small ad-muted">{r.reason ? `“${r.reason}” · ` : ''}{formatWhen(r.at)}</div>
+                  <div className="ops-small ops-muted">{r.reason ? `“${r.reason}” · ` : ''}{formatWhen(r.at)}</div>
                 </li>
               ))}
             </ol>

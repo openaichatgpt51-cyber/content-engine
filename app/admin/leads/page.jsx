@@ -35,10 +35,10 @@ export default async function AdminLeads({ searchParams }) {
 
   return (
     <>
-      <header className="ad-head">
-        <div className="ad-stack" style={{ gap: 4 }}>
-          <h1 className="ad-h1">Leads</h1>
-          <p className="ad-sub">Demo requests from contentengine.social arrive here automatically. Times in WAT.</p>
+      <header className="ops-head">
+        <div className="ops-stack" style={{ gap: 4 }}>
+          <h1 className="ops-h1">Leads</h1>
+          <p className="ops-sub">Demo requests from contentengine.social arrive here automatically. Times in WAT.</p>
         </div>
         <ActionDialog endpoint="/api/admin/leads" label="+ Add lead" requireReason={false} title="Add a lead by hand"
           fields={[{ name: 'company', label: 'Company', required: true }, { name: 'name', label: 'Contact name', required: true }, { name: 'email', label: 'Email', type: 'email' },
@@ -47,38 +47,38 @@ export default async function AdminLeads({ searchParams }) {
             { name: 'message', label: 'Notes', type: 'textarea' }]} successMessage="Lead added." />
       </header>
 
-      {error && <div className="ad-error" role="alert">Couldn’t read the leads table: {error.message}. Apply the leads migration first.</div>}
+      {error && <div className="ops-error" role="alert">Couldn’t read the leads table: {error.message}. Apply the leads migration first.</div>}
 
-      <section className="ad-stats" aria-label="Lead summary">
-        <div className="ad-card ad-stat"><span className="ad-stat-label">New this week</span><span className="ad-stat-value">{leads.filter(l => new Date(l.created_at).getTime() > weekAgo).length}</span><span className="ad-small ad-muted">{counts.new} not yet contacted</span></div>
-        <div className="ad-card ad-stat"><span className="ad-stat-label">Median first response</span><span className="ad-stat-value">{responseHours == null ? '—' : responseHours < 1 ? '<1 h' : Math.round(responseHours) + ' h'}</span><span className="ad-small ad-muted">target: under {LEAD_RESPONSE_HOURS} h</span></div>
-        <div className="ad-card ad-stat"><span className="ad-stat-label">Demos booked</span><span className="ad-stat-value">{counts.demo}</span></div>
-        <div className="ad-card ad-stat"><span className="ad-stat-label">Lead → client (90 days)</span><span className="ad-stat-value">{closed.length ? Math.round((won / closed.length) * 100) + '%' : '—'}</span><span className="ad-small ad-muted">{won} won of {closed.length} closed</span></div>
+      <section className="ops-stats" aria-label="Lead summary">
+        <div className="ops-card ops-stat"><span className="ops-stat-label">New this week</span><span className="ops-stat-value">{leads.filter(l => new Date(l.created_at).getTime() > weekAgo).length}</span><span className="ops-small ops-muted">{counts.new} not yet contacted</span></div>
+        <div className="ops-card ops-stat"><span className="ops-stat-label">Median first response</span><span className="ops-stat-value">{responseHours == null ? '—' : responseHours < 1 ? '<1 h' : Math.round(responseHours) + ' h'}</span><span className="ops-small ops-muted">target: under {LEAD_RESPONSE_HOURS} h</span></div>
+        <div className="ops-card ops-stat"><span className="ops-stat-label">Demos booked</span><span className="ops-stat-value">{counts.demo}</span></div>
+        <div className="ops-card ops-stat"><span className="ops-stat-label">Lead → client (90 days)</span><span className="ops-stat-value">{closed.length ? Math.round((won / closed.length) * 100) + '%' : '—'}</span><span className="ops-small ops-muted">{won} won of {closed.length} closed</span></div>
       </section>
 
-      <nav aria-label="Lead status" className="ad-pills" style={{ alignSelf: 'flex-start' }}>
-        {TABS.map(([k, label]) => <Link key={k} href={k === 'all' ? '/admin/leads' : `/admin/leads?status=${k}`} className="ad-pill" aria-current={tab === k ? 'page' : undefined}>{label} <span className="ad-muted">{counts[k]}</span></Link>)}
+      <nav aria-label="Lead status" className="ops-pills" style={{ alignSelf: 'flex-start' }}>
+        {TABS.map(([k, label]) => <Link key={k} href={k === 'all' ? '/admin/leads' : `/admin/leads?status=${k}`} className="ops-pill" aria-current={tab === k ? 'page' : undefined}>{label} <span className="ops-muted">{counts[k]}</span></Link>)}
       </nav>
 
-      <div className="ad-split">
-        <div className="ad-grow ad-card flush ad-table-box">
-          <table className="ad-table" style={{ minWidth: 700 }}>
-            <caption className="ad-sr">Leads, newest first</caption>
+      <div className="ops-split">
+        <div className="ops-grow ops-card flush ops-table-box">
+          <table className="ops-table" style={{ minWidth: 700 }}>
+            <caption className="ops-sr">Leads, newest first</caption>
             <thead><tr><th scope="col">Lead</th><th scope="col">Brands</th><th scope="col">Received</th><th scope="col">Status</th><th scope="col">Owner</th><th scope="col">Next step</th></tr></thead>
             <tbody>
-              {shown.length === 0 && <tr><td colSpan={6}><div className="ad-empty"><strong>No leads here</strong><span className="ad-muted">New demo requests appear automatically.</span></div></td></tr>}
+              {shown.length === 0 && <tr><td colSpan={6}><div className="ops-empty"><strong>No leads here</strong><span className="ops-muted">New demo requests appear automatically.</span></div></td></tr>}
               {shown.map(l => {
                 const st = STATUS[l.status || 'new']
                 const late = (l.status || 'new') === 'new' && now - new Date(l.created_at) > LEAD_RESPONSE_HOURS * 3_600_000
                 const href = `/admin/leads?${new URLSearchParams({ ...(tab !== 'all' ? { status: tab } : {}), id: String(l.id) })}`
                 return (
                   <tr key={l.id} style={selected && selected.id === l.id ? { background: '#FAF7EF' } : undefined}>
-                    <td><Link href={href} className="ad-strong" style={{ textDecoration: 'none' }}>{l.company}</Link><div className="ad-small ad-muted">{l.name}</div></td>
+                    <td><Link href={href} className="ops-strong" style={{ textDecoration: 'none' }}>{l.company}</Link><div className="ops-small ops-muted">{l.name}</div></td>
                     <td className="nowrap">{l.brands || '—'}</td>
-                    <td className="nowrap">{formatWhen(l.created_at)}{late && <div className="ad-small ad-text-warn">waiting {ageLabel(l.created_at, now)}</div>}</td>
-                    <td><span className={`ad-badge ${st[1]}`}>{st[0]}</span></td>
-                    <td className="nowrap">{l.assigned_to ? who[l.assigned_to] || 'Admin' : <span className="ad-muted">Unassigned</span>}</td>
-                    <td>{l.next_step || <span className="ad-muted">—</span>}</td>
+                    <td className="nowrap">{formatWhen(l.created_at)}{late && <div className="ops-small ops-text-warn">waiting {ageLabel(l.created_at, now)}</div>}</td>
+                    <td><span className={`ops-badge ${st[1]}`}>{st[0]}</span></td>
+                    <td className="nowrap">{l.assigned_to ? who[l.assigned_to] || 'Admin' : <span className="ops-muted">Unassigned</span>}</td>
+                    <td>{l.next_step || <span className="ops-muted">—</span>}</td>
                   </tr>
                 )
               })}
@@ -87,23 +87,23 @@ export default async function AdminLeads({ searchParams }) {
         </div>
 
         {selected && (
-          <aside className="ad-side ad-card ad-stack" aria-label="Lead details">
-            <div className="ad-row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div className="ad-stack" style={{ gap: 2 }}>
-                <h2 className="ad-h2" style={{ fontSize: 20 }}>{selected.company}</h2>
-                <span style={{ fontSize: 14 }}>{selected.name}{selected.email && <> · <a href={`mailto:${selected.email}`} className="ad-strong">{selected.email}</a></>}</span>
+          <aside className="ops-side ops-card ops-stack" aria-label="Lead details">
+            <div className="ops-row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div className="ops-stack" style={{ gap: 2 }}>
+                <h2 className="ops-h2" style={{ fontSize: 20 }}>{selected.company}</h2>
+                <span style={{ fontSize: 14 }}>{selected.name}{selected.email && <> · <a href={`mailto:${selected.email}`} className="ops-strong">{selected.email}</a></>}</span>
               </div>
-              <span className={`ad-badge ${STATUS[selected.status || 'new'][1]}`}>{STATUS[selected.status || 'new'][0]}</span>
+              <span className={`ops-badge ${STATUS[selected.status || 'new'][1]}`}>{STATUS[selected.status || 'new'][0]}</span>
             </div>
-            <dl className="ad-dl">
+            <dl className="ops-dl">
               <dt>Brands</dt><dd>{selected.brands || '—'}</dd>
               <dt>Received</dt><dd>{formatWhen(selected.created_at)}</dd>
               <dt>Source</dt><dd>{selected.source || 'Website demo form'}{selected.page ? ` · ${selected.page}` : ''}</dd>
               <dt>Owner</dt><dd>{selected.assigned_to ? who[selected.assigned_to] || 'Admin' : 'Unassigned'}</dd>
               {selected.lost_reason && <><dt>Lost because</dt><dd>{selected.lost_reason}</dd></>}
             </dl>
-            <p className="ad-pre">{selected.message || 'No message left.'}</p>
-            <div className="ad-row">
+            <p className="ops-pre">{selected.message || 'No message left.'}</p>
+            <div className="ops-row">
               <ActionDialog endpoint={`/api/admin/leads/${selected.id}`} method="PATCH" label="Update status" size="sm" requireReason={false}
                 fields={[{ name: 'status', label: 'Status', type: 'select', defaultValue: selected.status || 'new', options: statusOptions },
                   { name: 'next_step', label: 'Next step', defaultValue: selected.next_step || '', hint: 'e.g. Demo Tue 17 Nov 15:00' },
@@ -112,18 +112,18 @@ export default async function AdminLeads({ searchParams }) {
               <ActionDialog endpoint={`/api/admin/leads/${selected.id}`} method="PATCH" label="Add note" size="sm" requireReason={false} fields={[{ name: 'note', label: 'Note', type: 'textarea', required: true }]} successMessage="Note added." />
             </div>
             {selected.converted_client_id ? (
-              <Link href={`/admin/clients/${selected.converted_client_id}`} className="ad-btn">Open client</Link>
+              <Link href={`/admin/clients/${selected.converted_client_id}`} className="ops-btn">Open client</Link>
             ) : can(admin.role, 'leads.convert') ? (
-              <Link href={`/admin/clients/new?lead=${selected.id}`} className="ad-btn primary" style={{ minHeight: 48 }}>Convert to client →</Link>
+              <Link href={`/admin/clients/new?lead=${selected.id}`} className="ops-btn primary" style={{ minHeight: 48 }}>Convert to client →</Link>
             ) : (
               <ActionDialog endpoint={`/api/admin/leads/${selected.id}`} method="PATCH" body={{ status: 'won' }} label="Mark won, hand to Owner" variant="primary" requireReason={false}
                 title="Mark this lead won?" description="An Owner sets up the account and contract." fields={[{ name: 'note', label: 'Hand-over note', type: 'textarea' }]} successMessage="Marked won." />
             )}
-            <section className="ad-stack" aria-label="History">
+            <section className="ops-stack" aria-label="History">
               <h3 style={{ margin: 0, fontSize: 14 }}>History</h3>
-              <ol className="ad-list ad-stack">
-                {events.map((e, i) => <li key={i} style={{ fontSize: 13 }}><span>{e.body}</span><div className="ad-muted">{formatWhen(e.at)}</div></li>)}
-                <li style={{ fontSize: 13 }}><span>Request received{selected.source && selected.source !== 'manual' ? ` (${selected.source})` : ''}</span><div className="ad-muted">{formatWhen(selected.created_at)}</div></li>
+              <ol className="ops-list ops-stack">
+                {events.map((e, i) => <li key={i} style={{ fontSize: 13 }}><span>{e.body}</span><div className="ops-muted">{formatWhen(e.at)}</div></li>)}
+                <li style={{ fontSize: 13 }}><span>Request received{selected.source && selected.source !== 'manual' ? ` (${selected.source})` : ''}</span><div className="ops-muted">{formatWhen(selected.created_at)}</div></li>
               </ol>
             </section>
           </aside>

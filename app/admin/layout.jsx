@@ -12,10 +12,10 @@ export default async function AdminLayout({ children }) {
   const admin = await requireAdminPage()
   const counts = await loadNavCounts()
   return (
-    <div className="ad">
+    <div className="ops">
       <AdminNav admin={admin} counts={counts} />
-      <main className="ad-main" id="main">
-        <div className="ad-wrap">{children}</div>
+      <main className="ops-main" id="main">
+        <div className="ops-wrap">{children}</div>
       </main>
     </div>
   )
