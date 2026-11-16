@@ -13,10 +13,10 @@ export default async function NewClientPage({ searchParams }) {
   }
   return (
     <>
-      <Link href={leadId ? `/admin/leads?id=${leadId}` : '/admin/clients'} className="ad-back">← {leadId ? 'Lead' : 'Clients'}</Link>
-      <header className="ad-stack" style={{ gap: 4 }}>
-        <h1 className="ad-h1">New client</h1>
-        <p className="ad-sub">About 3 minutes.{leadId ? ` Filled in from the demo request by ${prefill.name}.` : ''}</p>
+      <Link href={leadId ? `/admin/leads?id=${leadId}` : '/admin/clients'} className="ops-back">← {leadId ? 'Lead' : 'Clients'}</Link>
+      <header className="ops-stack" style={{ gap: 4 }}>
+        <h1 className="ops-h1">New client</h1>
+        <p className="ops-sub">About 3 minutes.{leadId ? ` Filled in from the demo request by ${prefill.name}.` : ''}</p>
       </header>
       <NewClientForm prefill={prefill} leadId={leadId} adminName={admin.name} />
     </>

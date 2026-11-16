@@ -43,58 +43,58 @@ export default async function AdminClients({ searchParams }) {
 
   return (
     <>
-      <header className="ad-head">
-        <div className="ad-stack" style={{ gap: 4 }}>
-          <h1 className="ad-h1">Clients</h1>
-          <p className="ad-sub">{rows.length} client{rows.length === 1 ? '' : 's'}{money ? ` · ${formatNaira(mrr)} monthly recurring revenue` : ''}</p>
+      <header className="ops-head">
+        <div className="ops-stack" style={{ gap: 4 }}>
+          <h1 className="ops-h1">Clients</h1>
+          <p className="ops-sub">{rows.length} client{rows.length === 1 ? '' : 's'}{money ? ` · ${formatNaira(mrr)} monthly recurring revenue` : ''}</p>
         </div>
-        {can(admin.role, 'clients.create') && <Link href="/admin/clients/new" className="ad-btn primary">+ New client</Link>}
+        {can(admin.role, 'clients.create') && <Link href="/admin/clients/new" className="ops-btn primary">+ New client</Link>}
       </header>
 
-      <div className="ad-row" style={{ justifyContent: 'space-between' }}>
-        <nav aria-label="Client status" className="ad-pills">
+      <div className="ops-row" style={{ justifyContent: 'space-between' }}>
+        <nav aria-label="Client status" className="ops-pills">
           {FILTERS.map(([k, label]) => (
-            <Link key={k} href={link({ status: k === 'all' ? '' : k, page: '' })} className="ad-pill" aria-current={filter === k ? 'page' : undefined}>{label} <span className="ad-muted">{counts[k]}</span></Link>
+            <Link key={k} href={link({ status: k === 'all' ? '' : k, page: '' })} className="ops-pill" aria-current={filter === k ? 'page' : undefined}>{label} <span className="ops-muted">{counts[k]}</span></Link>
           ))}
         </nav>
-        <form role="search" action="/admin/clients" className="ad-row">
+        <form role="search" action="/admin/clients" className="ops-row">
           {filter !== 'all' && <input type="hidden" name="status" value={filter} />}
-          <label className="ad-sr" htmlFor="client-q">Search clients</label>
-          <input id="client-q" name="q" defaultValue={q} placeholder="Search name or email" className="ad-input" style={{ width: 260 }} />
-          <button className="ad-btn" type="submit">Search</button>
+          <label className="ops-sr" htmlFor="client-q">Search clients</label>
+          <input id="client-q" name="q" defaultValue={q} placeholder="Search name or email" className="ops-input" style={{ width: 260 }} />
+          <button className="ops-btn" type="submit">Search</button>
         </form>
       </div>
 
-      <div className="ad-card flush ad-table-box">
-        <table className="ad-table" style={{ minWidth: 960 }}>
-          <caption className="ad-sr">Clients, sorted by risk then name</caption>
+      <div className="ops-card flush ops-table-box">
+        <table className="ops-table" style={{ minWidth: 960 }}>
+          <caption className="ops-sr">Clients, sorted by risk then name</caption>
           <thead><tr>
             <th scope="col">Client</th><th scope="col">Status</th><th scope="col">Plan</th><th scope="col">Invoice</th>
             <th scope="col">Brands</th><th scope="col">Last post</th><th scope="col">Next 7 days</th><th scope="col">Risk</th>
           </tr></thead>
           <tbody>
-            {shown.length === 0 && <tr><td colSpan={8}><div className="ad-empty"><strong>No clients match</strong><span className="ad-muted">Try another filter or search.</span></div></td></tr>}
+            {shown.length === 0 && <tr><td colSpan={8}><div className="ops-empty"><strong>No clients match</strong><span className="ops-muted">Try another filter or search.</span></div></td></tr>}
             {shown.map(r => (
               <tr key={r.client_id}>
-                <td><Link href={`/admin/clients/${r.client_id}`} className="ad-strong" style={{ textDecoration: 'none' }}>{r.company_name || r.email}</Link><div className="ad-small ad-muted">{r.email}</div></td>
-                <td><span className={`ad-badge ${r.status.tone}`}>{r.status.label}</span></td>
-                <td className="nowrap">{r.contract ? r.contract.plan_name : <span className="ad-muted">No contract</span>}{money && r.contract && <div className="ad-small ad-muted">{formatNaira(r.contract.amount_ngn)} / {r.contract.cycle === 'annual' ? 'year' : 'month'}</div>}</td>
-                <td className="nowrap">{r.invoiceState === 'overdue' ? <span className="ad-text-bad">Overdue</span> : r.invoiceState === 'none' ? <span className="ad-muted">None yet</span> : money ? <span className={r.invoiceState === 'paid' ? 'ad-text-good' : ''}>{r.invoiceState === 'paid' ? 'Paid' : 'Sent'}</span> : <span className="ad-text-good">Up to date</span>}</td>
+                <td><Link href={`/admin/clients/${r.client_id}`} className="ops-strong" style={{ textDecoration: 'none' }}>{r.company_name || r.email}</Link><div className="ops-small ops-muted">{r.email}</div></td>
+                <td><span className={`ops-badge ${r.status.tone}`}>{r.status.label}</span></td>
+                <td className="nowrap">{r.contract ? r.contract.plan_name : <span className="ops-muted">No contract</span>}{money && r.contract && <div className="ops-small ops-muted">{formatNaira(r.contract.amount_ngn)} / {r.contract.cycle === 'annual' ? 'year' : 'month'}</div>}</td>
+                <td className="nowrap">{r.invoiceState === 'overdue' ? <span className="ops-text-bad">Overdue</span> : r.invoiceState === 'none' ? <span className="ops-muted">None yet</span> : money ? <span className={r.invoiceState === 'paid' ? 'ops-text-good' : ''}>{r.invoiceState === 'paid' ? 'Paid' : 'Sent'}</span> : <span className="ops-text-good">Up to date</span>}</td>
                 <td className="nowrap">{r.brands} of {r.max_brands}</td>
-                <td className="nowrap">{r.last_post_at ? formatDate(r.last_post_at) : <span className="ad-muted">Never</span>}</td>
-                <td className="nowrap">{r.scheduled_7d}{r.stale_approvals ? <div className="ad-small ad-text-warn">{r.stale_approvals} waiting approval</div> : null}</td>
-                <td><span className={`ad-badge ${r.risk === 'high' ? 'bad' : r.risk === 'medium' ? 'warn' : ''}`}>{r.risk[0].toUpperCase() + r.risk.slice(1)}</span></td>
+                <td className="nowrap">{r.last_post_at ? formatDate(r.last_post_at) : <span className="ops-muted">Never</span>}</td>
+                <td className="nowrap">{r.scheduled_7d}{r.stale_approvals ? <div className="ops-small ops-text-warn">{r.stale_approvals} waiting approval</div> : null}</td>
+                <td><span className={`ops-badge ${r.risk === 'high' ? 'bad' : r.risk === 'medium' ? 'warn' : ''}`}>{r.risk[0].toUpperCase() + r.risk.slice(1)}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {pages > 1 && (
-        <nav aria-label="Pages" className="ad-row" style={{ justifyContent: 'space-between' }}>
-          <span className="ad-small ad-muted">Page {page} of {pages}</span>
-          <span className="ad-row">
-            {page > 1 && <Link className="ad-btn" href={link({ page: String(page - 1) })}>Previous</Link>}
-            {page < pages && <Link className="ad-btn" href={link({ page: String(page + 1) })}>Next</Link>}
+        <nav aria-label="Pages" className="ops-row" style={{ justifyContent: 'space-between' }}>
+          <span className="ops-small ops-muted">Page {page} of {pages}</span>
+          <span className="ops-row">
+            {page > 1 && <Link className="ops-btn" href={link({ page: String(page - 1) })}>Previous</Link>}
+            {page < pages && <Link className="ops-btn" href={link({ page: String(page + 1) })}>Next</Link>}
           </span>
         </nav>
       )}

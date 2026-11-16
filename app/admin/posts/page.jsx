@@ -23,33 +23,33 @@ export default async function AdminPosts({ searchParams }) {
 
   return (
     <>
-      <header className="ad-head">
-        <div className="ad-stack" style={{ gap: 4 }}>
-          <h1 className="ad-h1">Posts queue</h1>
-          <p className="ad-sub">Posts across all clients that need a look. Times in WAT.</p>
+      <header className="ops-head">
+        <div className="ops-stack" style={{ gap: 4 }}>
+          <h1 className="ops-h1">Posts queue</h1>
+          <p className="ops-sub">Posts across all clients that need a look. Times in WAT.</p>
         </div>
       </header>
-      <nav aria-label="Filter posts" className="ad-pills" style={{ alignSelf: 'flex-start' }}>
+      <nav aria-label="Filter posts" className="ops-pills" style={{ alignSelf: 'flex-start' }}>
         {FILTERS.map(([k, label]) => (
-          <Link key={k} href={k === 'problems' ? '/admin/posts' : `/admin/posts?flag=${k}`} className="ad-pill" aria-current={filter === k ? 'page' : undefined}>{label} <span className="ad-muted">{counts[k]}</span></Link>
+          <Link key={k} href={k === 'problems' ? '/admin/posts' : `/admin/posts?flag=${k}`} className="ops-pill" aria-current={filter === k ? 'page' : undefined}>{label} <span className="ops-muted">{counts[k]}</span></Link>
         ))}
       </nav>
-      <div className="ad-card flush ad-table-box">
-        <table className="ad-table" style={{ minWidth: 900 }}>
-          <caption className="ad-sr">Posts needing attention</caption>
+      <div className="ops-card flush ops-table-box">
+        <table className="ops-table" style={{ minWidth: 900 }}>
+          <caption className="ops-sr">Posts needing attention</caption>
           <thead><tr><th scope="col">Post</th><th scope="col">Client · brand</th><th scope="col">Status</th><th scope="col">Scheduled</th><th scope="col">Flags</th><th scope="col">Updated</th></tr></thead>
           <tbody>
-            {shown.length === 0 && <tr><td colSpan={6}><div className="ad-empty"><strong>Nothing to look at</strong><span className="ad-muted">No posts match this filter.</span></div></td></tr>}
+            {shown.length === 0 && <tr><td colSpan={6}><div className="ops-empty"><strong>Nothing to look at</strong><span className="ops-muted">No posts match this filter.</span></div></td></tr>}
             {shown.map(({ p, flags }) => {
               const at = earliestScheduled(p)
               return (
                 <tr key={p.id}>
-                  <td><Link href={`/admin/posts/${p.id}`} className="ad-strong" style={{ textDecoration: 'none' }}>{p.topic || 'Untitled post'}</Link></td>
+                  <td><Link href={`/admin/posts/${p.id}`} className="ops-strong" style={{ textDecoration: 'none' }}>{p.topic || 'Untitled post'}</Link></td>
                   <td>{whoLine(dir, p.client_id, p.brand_id)}</td>
-                  <td><span className="ad-badge">{p.posting_status}</span></td>
+                  <td><span className="ops-badge">{p.posting_status}</span></td>
                   <td className="nowrap">{at ? formatWhen(at.toISOString()) : '—'}</td>
-                  <td>{flags.map(f => <span key={f} className={`ad-badge ${['failed', 'stuck'].includes(f) ? 'bad' : 'warn'}`} style={{ margin: '2px 6px 2px 0' }}>{FLAG_LABEL[f]}</span>)}</td>
-                  <td className="nowrap ad-muted">{ageLabel(p.updated_at, now)} ago</td>
+                  <td>{flags.map(f => <span key={f} className={`ops-badge ${['failed', 'stuck'].includes(f) ? 'bad' : 'warn'}`} style={{ margin: '2px 6px 2px 0' }}>{FLAG_LABEL[f]}</span>)}</td>
+                  <td className="nowrap ops-muted">{ageLabel(p.updated_at, now)} ago</td>
                 </tr>
               )
             })}

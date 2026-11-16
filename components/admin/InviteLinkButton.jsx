@@ -24,17 +24,17 @@ export default function InviteLinkButton({ clientId, contactName }) {
   const message = link ? `Hi ${contactName || 'there'}, here is your ContentEngine sign-in link: ${link} — it works once and expires in 24 hours.` : ''
   return (
     <>
-      <button type="button" className="ad-btn" onClick={create}>New sign-in link</button>
-      <dialog ref={ref} className="ad-dialog" aria-labelledby={`inv-${clientId}`}>
-        <div className="ad-form">
+      <button type="button" className="ops-btn" onClick={create}>New sign-in link</button>
+      <dialog ref={ref} className="ops-dialog" aria-labelledby={`inv-${clientId}`}>
+        <div className="ops-form">
           <h2 id={`inv-${clientId}`}>Sign-in link</h2>
-          {busy && <p role="status" className="ad-muted">Creating link…</p>}
-          {error && <div role="alert" className="ad-error">{error}</div>}
+          {busy && <p role="status" className="ops-muted">Creating link…</p>}
+          {error && <div role="alert" className="ops-error">{error}</div>}
           {link && <>
             <CopyField label="Link (single use, expires in 24 hours)" value={link} />
             <CopyField label="Message to send" value={message} multiline />
           </>}
-          <div className="ad-row" style={{ justifyContent: 'flex-end' }}><button type="button" className="ad-btn" onClick={() => ref.current?.close()}>Close</button></div>
+          <div className="ops-row" style={{ justifyContent: 'flex-end' }}><button type="button" className="ops-btn" onClick={() => ref.current?.close()}>Close</button></div>
         </div>
       </dialog>
     </>

@@ -42,18 +42,18 @@ export default async function ClientDetail({ params, searchParams }) {
 
   return (
     <>
-      <Link href="/admin/clients" className="ad-back">← Clients</Link>
-      <header className="ad-card ad-row" style={{ justifyContent: 'space-between', gap: 20, padding: '22px 24px' }}>
-        <div className="ad-stack" style={{ gap: 8, minWidth: 0 }}>
-          <div className="ad-row">
-            <h1 className="ad-h1" style={{ fontSize: 30 }}>{name}</h1>
-            <span className={`ad-badge ${status.tone}`} role="status">{status.label}</span>
+      <Link href="/admin/clients" className="ops-back">← Clients</Link>
+      <header className="ops-card ops-row" style={{ justifyContent: 'space-between', gap: 20, padding: '22px 24px' }}>
+        <div className="ops-stack" style={{ gap: 8, minWidth: 0 }}>
+          <div className="ops-row">
+            <h1 className="ops-h1" style={{ fontSize: 30 }}>{name}</h1>
+            <span className={`ops-badge ${status.tone}`} role="status">{status.label}</span>
           </div>
-          <p className="ad-sub" style={{ fontSize: 14 }}>
+          <p className="ops-sub" style={{ fontSize: 14 }}>
             {[client.email, contract ? `${contract.plan_name}${money ? `, ${formatNaira(contract.amount_ngn)} / ${contract.cycle === 'annual' ? 'year' : 'month'}` : ''}` : 'No contract', `client since ${formatDate(client.provisioned_at || client.created_at)}`, `${(brands || []).length} of ${client.max_brands ?? 1} brands`].join(' · ')}
           </p>
         </div>
-        <div className="ad-row">
+        <div className="ops-row">
           {!disabled && can(admin.role, 'clients.pause') && (settings?.posting_paused ? (
             <ActionDialog endpoint={`/api/admin/clients/${id}/posting`} body={{ action: 'resume' }} label="Resume posting"
               title={`Resume posting for ${name}?`} points={['Held posts go back into the queue and publish at their scheduled times.', 'Posts whose time has passed go out within about a minute.']} successMessage="Posting resumed." />
@@ -79,14 +79,14 @@ export default async function ClientDetail({ params, searchParams }) {
       </header>
 
       {disabled && (
-        <div className="ad-banner" role="note">
+        <div className="ops-banner" role="note">
           <b>{client.lifecycle === 'suspended' ? 'Account disabled.' : 'Client offboarded.'}</b> Users can’t sign in and posting is paused. See Activity for who did this and why.
         </div>
       )}
 
-      <nav aria-label="Client sections" className="ad-tabs">
+      <nav aria-label="Client sections" className="ops-tabs">
         {tabs.map(([k, label]) => (
-          <Link key={k} href={`/admin/clients/${id}${k === 'overview' ? '' : `?tab=${k}`}`} className="ad-tab" aria-current={tab === k ? 'page' : undefined}>{label}</Link>
+          <Link key={k} href={`/admin/clients/${id}${k === 'overview' ? '' : `?tab=${k}`}`} className="ops-tab" aria-current={tab === k ? 'page' : undefined}>{label}</Link>
         ))}
       </nav>
 
@@ -126,29 +126,29 @@ async function Overview({ id, summary, onboarding, contract, money, brandName })
 
   return (
     <>
-      <section aria-label="Last 30 days" className="ad-stats">
-        <div className="ad-card ad-stat"><span className="ad-stat-label">Published (30 days)</span><span className="ad-stat-value">{published}</span></div>
-        <div className="ad-card ad-stat"><span className="ad-stat-label">Approval rate</span><span className="ad-stat-value">{decided ? Math.round(((decided - rejected) / decided) * 100) + '%' : '—'}</span><span className="ad-small ad-muted">{rejected} rejected of {decided} decided</span></div>
-        <div className="ad-card ad-stat"><span className="ad-stat-label">Median time to approve</span><span className="ad-stat-value">{medianHours == null ? '—' : medianHours < 1 ? '<1 h' : Math.round(medianHours) + ' h'}</span><span className="ad-small ad-muted">from status history</span></div>
-        <div className={`ad-card ad-stat ${failed ? 'bad' : ''}`}><span className="ad-stat-label">Failed (30 days)</span><span className="ad-stat-value">{failed}</span></div>
+      <section aria-label="Last 30 days" className="ops-stats">
+        <div className="ops-card ops-stat"><span className="ops-stat-label">Published (30 days)</span><span className="ops-stat-value">{published}</span></div>
+        <div className="ops-card ops-stat"><span className="ops-stat-label">Approval rate</span><span className="ops-stat-value">{decided ? Math.round(((decided - rejected) / decided) * 100) + '%' : '—'}</span><span className="ops-small ops-muted">{rejected} rejected of {decided} decided</span></div>
+        <div className="ops-card ops-stat"><span className="ops-stat-label">Median time to approve</span><span className="ops-stat-value">{medianHours == null ? '—' : medianHours < 1 ? '<1 h' : Math.round(medianHours) + ' h'}</span><span className="ops-small ops-muted">from status history</span></div>
+        <div className={`ops-card ops-stat ${failed ? 'bad' : ''}`}><span className="ops-stat-label">Failed (30 days)</span><span className="ops-stat-value">{failed}</span></div>
       </section>
-      <div className="ad-split">
-        <section className="ad-card ad-grow ad-stack" aria-label="Coming up">
-          <h2 className="ad-h2">Next scheduled posts</h2>
-          {next.length === 0 ? <p className="ad-muted" style={{ margin: 0 }}>Nothing scheduled.</p> : (
-            <ul className="ad-list ad-stack">
+      <div className="ops-split">
+        <section className="ops-card ops-grow ops-stack" aria-label="Coming up">
+          <h2 className="ops-h2">Next scheduled posts</h2>
+          {next.length === 0 ? <p className="ops-muted" style={{ margin: 0 }}>Nothing scheduled.</p> : (
+            <ul className="ops-list ops-stack">
               {next.map(({ p, at }) => (
-                <li key={p.id} className="ad-row" style={{ justifyContent: 'space-between' }}>
-                  <Link href={`/admin/posts/${p.id}`} className="ad-strong" style={{ textDecoration: 'none' }}>{p.topic || 'Untitled'}</Link>
-                  <span className="ad-small ad-muted">{brandName[p.brand_id] || ''} · {formatWhen(at.toISOString())}{p.posting_status === 'HALTED' ? ' · held' : ''}</span>
+                <li key={p.id} className="ops-row" style={{ justifyContent: 'space-between' }}>
+                  <Link href={`/admin/posts/${p.id}`} className="ops-strong" style={{ textDecoration: 'none' }}>{p.topic || 'Untitled'}</Link>
+                  <span className="ops-small ops-muted">{brandName[p.brand_id] || ''} · {formatWhen(at.toISOString())}{p.posting_status === 'HALTED' ? ' · held' : ''}</span>
                 </li>
               ))}
             </ul>
           )}
         </section>
-        <section className="ad-card ad-side ad-stack" aria-label="Setup">
-          <h2 className="ad-h2">Setup</h2>
-          <dl className="ad-dl">
+        <section className="ops-card ops-side ops-stack" aria-label="Setup">
+          <h2 className="ops-h2">Setup</h2>
+          <dl className="ops-dl">
             <dt>Onboarding</dt><dd>{onboarding?.completed ? 'Complete' : `Step ${onboarding?.step || 1} of 5`}</dd>
             <dt>Timezone</dt><dd>{onboarding?.timezone || 'Africa/Lagos'}</dd>
             <dt>Plan</dt><dd>{contract ? contract.plan_name : 'No contract'}</dd>
@@ -156,7 +156,7 @@ async function Overview({ id, summary, onboarding, contract, money, brandName })
             {contract?.renewal_date && <><dt>Renews</dt><dd>{formatDate(contract.renewal_date)}</dd></>}
             <dt>Waiting approval</dt><dd>{summary?.stale_approvals ? `${summary.stale_approvals} over 48 h` : 'None over 48 h'}</dd>
           </dl>
-          {!money && <p className="ad-small ad-muted" style={{ margin: 0 }}>Amounts and invoices are handled by an Owner.</p>}
+          {!money && <p className="ops-small ops-muted" style={{ margin: 0 }}>Amounts and invoices are handled by an Owner.</p>}
         </section>
       </div>
     </>
@@ -166,11 +166,11 @@ async function Overview({ id, summary, onboarding, contract, money, brandName })
 function Brands({ id, admin, brands, profileBy, accounts, max }) {
   const owner = can(admin.role, 'clients.brands')
   return (
-    <section className="ad-card flush" aria-label="Brands">
-      <div className="ad-card-head">
-        <h2 className="ad-h2">Brands <span className="ad-muted" style={{ fontWeight: 500 }}>{brands.length} of {max} allowed</span></h2>
+    <section className="ops-card flush" aria-label="Brands">
+      <div className="ops-card-head">
+        <h2 className="ops-h2">Brands <span className="ops-muted" style={{ fontWeight: 500 }}>{brands.length} of {max} allowed</span></h2>
         {owner && (
-          <div className="ad-row">
+          <div className="ops-row">
             <ActionDialog endpoint={`/api/admin/clients/${id}`} method="PATCH" label="Change allowance" size="sm"
               title="Brand allowance" description="Extra brands are a paid add-on. You can’t go below the brands the client already has."
               fields={[{ name: 'max_brands', label: 'Brands allowed', type: 'number', min: Math.max(1, brands.length), max: 10, defaultValue: max, required: true }]} successMessage="Allowance saved." />
@@ -181,8 +181,8 @@ function Brands({ id, admin, brands, profileBy, accounts, max }) {
           </div>
         )}
       </div>
-      <div className="ad-table-box">
-        <table className="ad-table" style={{ minWidth: 640 }}>
+      <div className="ops-table-box">
+        <table className="ops-table" style={{ minWidth: 640 }}>
           <thead><tr><th scope="col">Brand</th><th scope="col">Language</th><th scope="col">Brand Voice</th><th scope="col">Connections</th></tr></thead>
           <tbody>
             {brands.map(b => {
@@ -191,10 +191,10 @@ function Brands({ id, admin, brands, profileBy, accounts, max }) {
               const conns = accounts.filter(a => a.brand_id === b.id)
               return (
                 <tr key={b.id}>
-                  <td className="ad-strong">{b.name}{b.is_default && <span className="ad-badge" style={{ marginLeft: 8 }}>Default</span>}</td>
-                  <td>{LANG[pr.language] || pr.language || <span className="ad-text-warn">Not set</span>}{pr.country ? ` · ${pr.country}` : ''}</td>
-                  <td>{done === 4 ? <span className="ad-text-good">Complete 4/4</span> : <span className="ad-text-warn">{done}/4 filled</span>}</td>
-                  <td>{conns.length ? conns.map(a => a.platform).join(', ') : <span className="ad-muted">None</span>}</td>
+                  <td className="ops-strong">{b.name}{b.is_default && <span className="ops-badge" style={{ marginLeft: 8 }}>Default</span>}</td>
+                  <td>{LANG[pr.language] || pr.language || <span className="ops-text-warn">Not set</span>}{pr.country ? ` · ${pr.country}` : ''}</td>
+                  <td>{done === 4 ? <span className="ops-text-good">Complete 4/4</span> : <span className="ops-text-warn">{done}/4 filled</span>}</td>
+                  <td>{conns.length ? conns.map(a => a.platform).join(', ') : <span className="ops-muted">None</span>}</td>
                 </tr>
               )
             })}
@@ -208,22 +208,22 @@ function Brands({ id, admin, brands, profileBy, accounts, max }) {
 async function Posts({ id, brandName }) {
   const { data: posts } = await supabaseAdmin.from('posts').select(POST_COLS).eq('client_id', id).order('created_at', { ascending: false }).limit(50)
   return (
-    <section className="ad-card flush ad-table-box" aria-label="Posts">
-      <table className="ad-table" style={{ minWidth: 820 }}>
-        <caption className="ad-sr">Latest 50 posts</caption>
+    <section className="ops-card flush ops-table-box" aria-label="Posts">
+      <table className="ops-table" style={{ minWidth: 820 }}>
+        <caption className="ops-sr">Latest 50 posts</caption>
         <thead><tr><th scope="col">Post</th><th scope="col">Brand</th><th scope="col">Status</th><th scope="col">Scheduled</th><th scope="col">Flags</th></tr></thead>
         <tbody>
-          {(posts || []).length === 0 && <tr><td colSpan={5}><div className="ad-empty">No posts yet.</div></td></tr>}
+          {(posts || []).length === 0 && <tr><td colSpan={5}><div className="ops-empty">No posts yet.</div></td></tr>}
           {(posts || []).map(p => {
             const flags = riskFlags(p)
             const at = earliestScheduled(p)
             return (
               <tr key={p.id}>
-                <td><Link href={`/admin/posts/${p.id}`} className="ad-strong" style={{ textDecoration: 'none' }}>{p.topic || 'Untitled'}</Link></td>
+                <td><Link href={`/admin/posts/${p.id}`} className="ops-strong" style={{ textDecoration: 'none' }}>{p.topic || 'Untitled'}</Link></td>
                 <td>{brandName[p.brand_id] || '—'}</td>
-                <td><span className="ad-badge">{p.posting_status}</span></td>
+                <td><span className="ops-badge">{p.posting_status}</span></td>
                 <td className="nowrap">{at ? formatWhen(at.toISOString()) : '—'}</td>
-                <td>{flags.length ? flags.map(f => <span key={f} className={`ad-badge ${['failed', 'stuck'].includes(f) ? 'bad' : 'warn'}`} style={{ marginRight: 6 }}>{FLAG_LABEL[f]}</span>) : <span className="ad-muted">—</span>}</td>
+                <td>{flags.length ? flags.map(f => <span key={f} className={`ops-badge ${['failed', 'stuck'].includes(f) ? 'bad' : 'warn'}`} style={{ marginRight: 6 }}>{FLAG_LABEL[f]}</span>) : <span className="ops-muted">—</span>}</td>
               </tr>
             )
           })}
@@ -236,21 +236,21 @@ async function Posts({ id, brandName }) {
 function Connections({ accounts, brandName }) {
   const now = new Date()
   return (
-    <section className="ad-card flush ad-table-box" aria-label="Connections">
-      <table className="ad-table" style={{ minWidth: 720 }}>
+    <section className="ops-card flush ops-table-box" aria-label="Connections">
+      <table className="ops-table" style={{ minWidth: 720 }}>
         <thead><tr><th scope="col">Platform</th><th scope="col">Brand</th><th scope="col">Account</th><th scope="col">Health</th><th scope="col">Publishing</th></tr></thead>
         <tbody>
-          {accounts.length === 0 && <tr><td colSpan={5}><div className="ad-empty">No platforms connected yet.</div></td></tr>}
+          {accounts.length === 0 && <tr><td colSpan={5}><div className="ops-empty">No platforms connected yet.</div></td></tr>}
           {accounts.map((a, i) => {
             const expired = a.expires_at && new Date(a.expires_at) <= now
             const days = a.expires_at ? Math.ceil((new Date(a.expires_at) - now) / 86_400_000) : null
             return (
               <tr key={i}>
-                <td className="ad-strong">{a.platform}</td>
+                <td className="ops-strong">{a.platform}</td>
                 <td>{brandName[a.brand_id] || '—'}</td>
-                <td>{a.handle ? `@${a.handle}` : a.display_name || <span className="ad-muted">Name not synced</span>}</td>
-                <td>{a.token_valid === false || expired ? <span className="ad-text-bad">Reconnect needed</span> : days != null && days <= 7 ? <span className="ad-text-warn">Expires in {days} day(s)</span> : <span className="ad-text-good">Connected</span>}</td>
-                <td>{LIVE_PLATFORMS.includes(a.platform) ? 'Live' : <span className="ad-muted">Import only (not live)</span>}</td>
+                <td>{a.handle ? `@${a.handle}` : a.display_name || <span className="ops-muted">Name not synced</span>}</td>
+                <td>{a.token_valid === false || expired ? <span className="ops-text-bad">Reconnect needed</span> : days != null && days <= 7 ? <span className="ops-text-warn">Expires in {days} day(s)</span> : <span className="ops-text-good">Connected</span>}</td>
+                <td>{LIVE_PLATFORMS.includes(a.platform) ? 'Live' : <span className="ops-muted">Import only (not live)</span>}</td>
               </tr>
             )
           })}
@@ -271,23 +271,23 @@ async function Billing({ id, contract }) {
     { name: 'renewal_date', label: 'Renewal date', type: 'date', defaultValue: contract?.renewal_date || '' },
   ]
   return (
-    <div className="ad-split">
-      <section className="ad-card ad-side ad-stack" aria-label="Contract">
-        <h2 className="ad-h2">Contract</h2>
+    <div className="ops-split">
+      <section className="ops-card ops-side ops-stack" aria-label="Contract">
+        <h2 className="ops-h2">Contract</h2>
         {contract ? (
-          <dl className="ad-dl">
+          <dl className="ops-dl">
             <dt>Plan</dt><dd>{contract.plan_name}</dd>
             <dt>Amount</dt><dd>{formatNaira(contract.amount_ngn)} / {contract.cycle === 'annual' ? 'year' : 'month'}</dd>
             <dt>Started</dt><dd>{formatDate(contract.start_date)}</dd>
             <dt>Renews</dt><dd>{contract.renewal_date ? formatDate(contract.renewal_date) : '—'}</dd>
           </dl>
-        ) : <p className="ad-muted" style={{ margin: 0 }}>No active contract.</p>}
+        ) : <p className="ops-muted" style={{ margin: 0 }}>No active contract.</p>}
         <ActionDialog endpoint="/api/admin/contracts" body={{ client_id: id }} label={contract ? 'Change contract' : 'Add contract'} fields={contractFields}
           description={contract ? 'Saving ends the current contract and starts this one, so the history is kept.' : undefined} successMessage="Contract saved." />
       </section>
-      <section className="ad-card flush ad-grow" aria-label="Invoices">
-        <div className="ad-card-head">
-          <h2 className="ad-h2">Invoices</h2>
+      <section className="ops-card flush ops-grow" aria-label="Invoices">
+        <div className="ops-card-head">
+          <h2 className="ops-h2">Invoices</h2>
           <ActionDialog endpoint="/api/admin/invoices" body={{ client_id: id }} label="Record invoice" size="sm" requireReason={false}
             fields={[
               { name: 'number', label: 'Invoice number', required: true, hint: 'e.g. CE-2026-0015' },
@@ -298,22 +298,22 @@ async function Billing({ id, contract }) {
               { name: 'status', label: 'Status', type: 'select', defaultValue: 'sent', options: [{ value: 'draft', label: 'Draft' }, { value: 'sent', label: 'Sent' }, { value: 'paid', label: 'Paid' }] },
             ]} successMessage="Invoice recorded." />
         </div>
-        <div className="ad-table-box">
-          <table className="ad-table" style={{ minWidth: 640 }}>
-            <thead><tr><th scope="col">Number</th><th scope="col">Period</th><th scope="col">Amount</th><th scope="col">Due</th><th scope="col">Status</th><th scope="col"><span className="ad-sr">Actions</span></th></tr></thead>
+        <div className="ops-table-box">
+          <table className="ops-table" style={{ minWidth: 640 }}>
+            <thead><tr><th scope="col">Number</th><th scope="col">Period</th><th scope="col">Amount</th><th scope="col">Due</th><th scope="col">Status</th><th scope="col"><span className="ops-sr">Actions</span></th></tr></thead>
             <tbody>
-              {(invoices || []).length === 0 && <tr><td colSpan={6}><div className="ad-empty">No invoices recorded.</div></td></tr>}
+              {(invoices || []).length === 0 && <tr><td colSpan={6}><div className="ops-empty">No invoices recorded.</div></td></tr>}
               {(invoices || []).map(inv => {
                 const overdue = invoiceIsOverdue(inv, now)
                 return (
                   <tr key={inv.id}>
-                    <td className="ad-strong nowrap">{inv.number}</td>
+                    <td className="ops-strong nowrap">{inv.number}</td>
                     <td className="nowrap">{formatDate(inv.period_start)} – {formatDate(inv.period_end)}</td>
                     <td className="nowrap">{formatNaira(inv.amount_ngn)}</td>
                     <td className="nowrap">{formatDate(inv.due_date)}</td>
-                    <td>{overdue ? <span className="ad-badge bad">Overdue</span> : <span className={`ad-badge ${inv.status === 'paid' ? 'good' : ''}`}>{inv.status[0].toUpperCase() + inv.status.slice(1)}</span>}</td>
+                    <td>{overdue ? <span className="ops-badge bad">Overdue</span> : <span className={`ops-badge ${inv.status === 'paid' ? 'good' : ''}`}>{inv.status[0].toUpperCase() + inv.status.slice(1)}</span>}</td>
                     <td className="nowrap">{!['paid', 'void'].includes(inv.status) && (
-                      <span className="ad-row">
+                      <span className="ops-row">
                         <ActionDialog endpoint={`/api/admin/invoices/${inv.id}`} method="PATCH" body={{ status: 'paid' }} label="Mark paid" size="sm" title={`Mark ${inv.number} paid?`} successMessage="Marked paid." />
                         <ActionDialog endpoint={`/api/admin/invoices/${inv.id}`} method="PATCH" body={{ status: 'void' }} label="Void" size="sm" variant="danger" title={`Void ${inv.number}?`} successMessage="Invoice voided." />
                       </span>
@@ -335,16 +335,16 @@ async function Activity({ id }) {
   const { data: admins } = adminIds.length ? await supabaseAdmin.from('admin_users').select('user_id, full_name').in('user_id', adminIds) : { data: [] }
   const who = Object.fromEntries((admins || []).map(a => [a.user_id, a.full_name || 'Admin']))
   return (
-    <section className="ad-card flush" aria-label="Activity">
-      {(rows || []).length === 0 ? <div className="ad-empty">No admin actions on this client yet.</div> : (
-        <ul className="ad-list">
+    <section className="ops-card flush" aria-label="Activity">
+      {(rows || []).length === 0 ? <div className="ops-empty">No admin actions on this client yet.</div> : (
+        <ul className="ops-list">
           {rows.map(r => (
-            <li key={r.id} className="ad-item">
-              <div className="ad-item-body">
-                <span className="ad-item-title">{r.action.replace(/[._]/g, ' ')}</span>
-                <span className="ad-item-meta">{who[r.admin_id] || 'Former admin'}{r.reason ? ` · “${r.reason}”` : ''}</span>
+            <li key={r.id} className="ops-item">
+              <div className="ops-item-body">
+                <span className="ops-item-title">{r.action.replace(/[._]/g, ' ')}</span>
+                <span className="ops-item-meta">{who[r.admin_id] || 'Former admin'}{r.reason ? ` · “${r.reason}”` : ''}</span>
               </div>
-              <span className="ad-small ad-muted">{formatWhen(r.at)}</span>
+              <span className="ops-small ops-muted">{formatWhen(r.at)}</span>
             </li>
           ))}
         </ul>

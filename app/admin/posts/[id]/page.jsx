@@ -31,21 +31,21 @@ export default async function AdminPost({ params }) {
 
   return (
     <>
-      <Link href="/admin/posts" className="ad-back">← Posts queue</Link>
-      <header className="ad-card ad-row" style={{ justifyContent: 'space-between', gap: 16 }}>
-        <div className="ad-stack" style={{ gap: 6, minWidth: 0 }}>
-          <h1 className="ad-h1" style={{ fontSize: 28 }}>{post.topic || 'Untitled post'}</h1>
-          <p className="ad-sub" style={{ fontSize: 14 }}>
-            <Link href={`/admin/clients/${post.client_id}`} className="ad-strong">{dir.clientName[post.client_id] || 'Client'}</Link>
+      <Link href="/admin/posts" className="ops-back">← Posts queue</Link>
+      <header className="ops-card ops-row" style={{ justifyContent: 'space-between', gap: 16 }}>
+        <div className="ops-stack" style={{ gap: 6, minWidth: 0 }}>
+          <h1 className="ops-h1" style={{ fontSize: 28 }}>{post.topic || 'Untitled post'}</h1>
+          <p className="ops-sub" style={{ fontSize: 14 }}>
+            <Link href={`/admin/clients/${post.client_id}`} className="ops-strong">{dir.clientName[post.client_id] || 'Client'}</Link>
             {post.brand_id && dir.brandName[post.brand_id] ? ` · ${dir.brandName[post.brand_id]}` : ''} · created {formatWhen(post.created_at, tz)}
           </p>
-          <div className="ad-row">
-            <span className="ad-badge dark">{post.posting_status}</span>
-            {paused && <span className="ad-badge warn">Client paused</span>}
-            {flags.map(f => <span key={f} className={`ad-badge ${['failed', 'stuck'].includes(f) ? 'bad' : 'warn'}`}>{FLAG_LABEL[f]}</span>)}
+          <div className="ops-row">
+            <span className="ops-badge dark">{post.posting_status}</span>
+            {paused && <span className="ops-badge warn">Client paused</span>}
+            {flags.map(f => <span key={f} className={`ops-badge ${['failed', 'stuck'].includes(f) ? 'bad' : 'warn'}`}>{FLAG_LABEL[f]}</span>)}
           </div>
         </div>
-        <div className="ad-row">
+        <div className="ops-row">
           {canRetryStatus && can(admin.role, 'posts.retry') && (
             <>
               <ActionDialog endpoint={`/api/admin/posts/${post.id}/retry`} body={{ mode: 'now' }} label="Retry now" variant="primary"
@@ -63,26 +63,26 @@ export default async function AdminPost({ params }) {
         </div>
       </header>
 
-      {canRetryStatus && !retry.ok && <div className="ad-banner warn" role="note"><b>Retry is blocked:</b> {retry.reason}</div>}
+      {canRetryStatus && !retry.ok && <div className="ops-banner warn" role="note"><b>Retry is blocked:</b> {retry.reason}</div>}
 
-      <div className="ad-split">
-        <section className="ad-grow ad-stack" aria-label="Copy per platform">
-          {platforms.length === 0 && <div className="ad-card ad-muted">This post has no platforms set.</div>}
+      <div className="ops-split">
+        <section className="ops-grow ops-stack" aria-label="Copy per platform">
+          {platforms.length === 0 && <div className="ops-card ops-muted">This post has no platforms set.</div>}
           {platforms.map(p => {
             const text = post[p.text] || ''
             const over = text.length > p.limit
             const acc = accounts.find(a => a.platform === p.key && (!post.brand_id || a.brand_id === post.brand_id)) || null
             return (
-              <article key={p.key} className="ad-card ad-stack">
-                <div className="ad-row" style={{ justifyContent: 'space-between' }}>
-                  <h2 className="ad-h2">{p.label}{!LIVE_PLATFORMS.includes(p.key) && <span className="ad-badge" style={{ marginLeft: 8 }}>Not live</span>}</h2>
-                  <span className={over ? 'ad-text-bad' : 'ad-muted'} style={{ fontSize: 13 }}>{text.length} / {p.limit}{over ? ' — over limit' : ''}</span>
+              <article key={p.key} className="ops-card ops-stack">
+                <div className="ops-row" style={{ justifyContent: 'space-between' }}>
+                  <h2 className="ops-h2">{p.label}{!LIVE_PLATFORMS.includes(p.key) && <span className="ops-badge" style={{ marginLeft: 8 }}>Not live</span>}</h2>
+                  <span className={over ? 'ops-text-bad' : 'ops-muted'} style={{ fontSize: 13 }}>{text.length} / {p.limit}{over ? ' — over limit' : ''}</span>
                 </div>
-                <p className="ad-pre">{text || 'No copy for this platform.'}</p>
-                <dl className="ad-dl">
-                  <dt>Publishes from</dt><dd>{acc ? (acc.handle ? '@' + acc.handle : acc.display_name || 'Connected account') : <span className="ad-text-bad">No account for this brand</span>}</dd>
+                <p className="ops-pre">{text || 'No copy for this platform.'}</p>
+                <dl className="ops-dl">
+                  <dt>Publishes from</dt><dd>{acc ? (acc.handle ? '@' + acc.handle : acc.display_name || 'Connected account') : <span className="ops-text-bad">No account for this brand</span>}</dd>
                   <dt>Scheduled</dt><dd>{formatWhen(post[p.time], tz)}</dd>
-                  <dt>Published</dt><dd>{post[p.posted] === 'YES' ? <span className="ad-text-good">Yes{p.key === 'LinkedIn' && post.linkedin_posted_at ? `, ${formatWhen(post.linkedin_posted_at, tz)}` : ''}</span> : 'No'}</dd>
+                  <dt>Published</dt><dd>{post[p.posted] === 'YES' ? <span className="ops-text-good">Yes{p.key === 'LinkedIn' && post.linkedin_posted_at ? `, ${formatWhen(post.linkedin_posted_at, tz)}` : ''}</span> : 'No'}</dd>
                 </dl>
                 {movable && post[p.posted] !== 'YES' && can(admin.role, 'posts.reschedule') && (
                   <div><ActionDialog endpoint={`/api/admin/posts/${post.id}/reschedule`} body={{ platform: p.key }} label={`Change ${p.label} time`} size="sm"
@@ -92,20 +92,20 @@ export default async function AdminPost({ params }) {
             )
           })}
         </section>
-        <aside className="ad-side ad-stack">
-          <section className="ad-card ad-stack" aria-label="Errors">
-            <h2 className="ad-h2">Errors</h2>
-            {errors === null ? <p className="ad-small ad-muted" style={{ margin: 0 }}>Error logs aren’t linked to posts yet (no post_id column).</p>
-              : errors.length === 0 ? <p className="ad-small ad-muted" style={{ margin: 0 }}>No errors logged for this post.</p>
-              : <ul className="ad-list ad-stack">{errors.map((e, i) => <li key={i}><div className="ad-strong" style={{ fontSize: 14 }}>{e.platform || 'Workflow'} · {e.node_name}</div><div className="ad-small" style={{ overflowWrap: 'anywhere' }}>{e.error_message}</div><div className="ad-small ad-muted">{formatWhen(e.created_at, tz)}</div></li>)}</ul>}
+        <aside className="ops-side ops-stack">
+          <section className="ops-card ops-stack" aria-label="Errors">
+            <h2 className="ops-h2">Errors</h2>
+            {errors === null ? <p className="ops-small ops-muted" style={{ margin: 0 }}>Error logs aren’t linked to posts yet (no post_id column).</p>
+              : errors.length === 0 ? <p className="ops-small ops-muted" style={{ margin: 0 }}>No errors logged for this post.</p>
+              : <ul className="ops-list ops-stack">{errors.map((e, i) => <li key={i}><div className="ops-strong" style={{ fontSize: 14 }}>{e.platform || 'Workflow'} · {e.node_name}</div><div className="ops-small" style={{ overflowWrap: 'anywhere' }}>{e.error_message}</div><div className="ops-small ops-muted">{formatWhen(e.created_at, tz)}</div></li>)}</ul>}
           </section>
-          <section className="ad-card ad-stack" aria-label="Status history">
-            <h2 className="ad-h2">Status history</h2>
-            {(history || []).length === 0 ? <p className="ad-small ad-muted" style={{ margin: 0 }}>History starts once the status-history migration is applied.</p> : (
-              <ol className="ad-list ad-stack">{history.map((h, i) => <li key={i} style={{ fontSize: 14 }}><b>{h.to_status}</b>{h.from_status ? <span className="ad-muted"> from {h.from_status}</span> : null}<div className="ad-small ad-muted">{formatWhen(h.at, tz)}</div></li>)}</ol>
+          <section className="ops-card ops-stack" aria-label="Status history">
+            <h2 className="ops-h2">Status history</h2>
+            {(history || []).length === 0 ? <p className="ops-small ops-muted" style={{ margin: 0 }}>History starts once the status-history migration is applied.</p> : (
+              <ol className="ops-list ops-stack">{history.map((h, i) => <li key={i} style={{ fontSize: 14 }}><b>{h.to_status}</b>{h.from_status ? <span className="ops-muted"> from {h.from_status}</span> : null}<div className="ops-small ops-muted">{formatWhen(h.at, tz)}</div></li>)}</ol>
             )}
           </section>
-          <p className="ad-small ad-muted" style={{ margin: 0 }}>{whoLine(dir, post.client_id, post.brand_id)} · Post ID <code>{post.id}</code></p>
+          <p className="ops-small ops-muted" style={{ margin: 0 }}>{whoLine(dir, post.client_id, post.brand_id)} · Post ID <code>{post.id}</code></p>
         </aside>
       </div>
     </>
