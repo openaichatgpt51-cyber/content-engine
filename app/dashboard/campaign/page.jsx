@@ -148,7 +148,13 @@ export default function CampaignPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ groups }),
       })
-      const body = await res.json()
+      const raw = await res.text()
+      let body
+      try { body = JSON.parse(raw) } catch {
+        throw new Error(res.status === 504 || /error o/i.test(raw.slice(0, 20))
+          ? 'The campaign is taking longer than the server allows. Posts already started will still finish — check the Review Queue in a few minutes before retrying.'
+          : `Campaign request failed (HTTP ${res.status})`)
+      }
       if (!res.ok) {
         if (body.code === 'LIMIT_REACHED') setErrorCode('LIMIT_REACHED')
         throw new Error(body.error || `Request failed (${res.status})`)
