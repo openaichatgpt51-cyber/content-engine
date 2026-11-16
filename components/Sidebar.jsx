@@ -6,13 +6,13 @@ import UsageMeter from './UsageMeter'
 import BrandSwitcher from './BrandSwitcher'
 
 const NAV = [
-  { href: '/dashboard',              label: 'Calendar',      icon: CalIcon },
-  { href: '/dashboard/new-post',     label: 'New Post',      icon: PlusIcon },
-  { href: '/dashboard/campaign',     label: 'Campaign',      icon: MegaphoneIcon },
-  { href: '/dashboard/review',       label: 'Review Queue',  icon: EyeIcon,  badge: 'pending' },
-  { href: '/dashboard/notifications',label: 'Notifications', icon: BellIcon, badge: 'notifications' },
-  { href: '/dashboard/analytics',    label: 'Analytics',     icon: ChartIcon },
-  { href: '/dashboard/settings',     label: 'Settings',      icon: CogIcon },
+  { href: '/dashboard',              label: 'Calendar',      short: 'Calendar', icon: CalIcon },
+  { href: '/dashboard/new-post',     label: 'New Post',      short: 'New',      icon: PlusIcon },
+  { href: '/dashboard/review',       label: 'Review Queue',  short: 'Review',   icon: EyeIcon,  badge: 'pending' },
+  { href: '/dashboard/campaign',     label: 'Campaign',      short: 'Campaign', icon: MegaphoneIcon },
+  { href: '/dashboard/notifications',label: 'Notifications', short: 'Alerts',   icon: BellIcon, badge: 'notifications' },
+  { href: '/dashboard/analytics',    label: 'Analytics',     short: 'Stats',    icon: ChartIcon },
+  { href: '/dashboard/settings',     label: 'Settings',      short: 'Settings', icon: CogIcon },
 ]
 
 export default function Sidebar({ userEmail = '', pendingCount = 0, notificationCount = 0, isAdmin = false }) {
@@ -26,7 +26,21 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
   }
 
   return (
-    <aside style={{
+    <>
+    {/* Phone-only top bar: logo, brand switcher and sign out. On phones the
+        sidebar itself becomes a bottom tab bar (see .ce-sidebar in globals.css). */}
+    <header className="ce-mobile-top">
+      <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.15rem', color: 'var(--white)' }}>
+        Content<span style={{ color: 'var(--accent-warm)' }}>Engine</span>
+      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <div className="ce-mobile-brand"><BrandSwitcher /></div>
+        <button onClick={handleSignOut} aria-label="Sign out" className="press" style={{ minWidth: 44, minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.75)', borderRadius: 'var(--radius-sm)' }}>
+          <LogOutIcon size={18} />
+        </button>
+      </div>
+    </header>
+    <aside className="ce-sidebar" style={{
       width: 220,
       minHeight: '100vh',
       background: 'var(--ink)',
@@ -40,7 +54,7 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
       zIndex: 100,
     }}>
       {/* Logo */}
-      <div className="animate-in" style={{
+      <div className="animate-in ce-side-extra" style={{
         padding: '28px 24px 24px',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
@@ -53,15 +67,15 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
       </div>
 
       {/* Brand switcher (renders nothing while multi-brand is off) */}
-      <BrandSwitcher />
+      <div className="ce-side-extra"><BrandSwitcher /></div>
 
       {/* Nav */}
-      <nav style={{ flex: 1, padding: '16px 12px' }}>
+      <nav aria-label="Main" className="ce-nav" style={{ flex: 1, padding: '16px 12px' }}>
         {NAV.map(({ href, label, icon: Icon, badge }) => {
           const active = pathname === href
           const count  = badge ? badgeCounts[badge] : 0
           return (
-            <Link key={href} href={href} className={`nav-item${active ? ' nav-item--active' : ''}`} style={{
+            <Link key={href} href={href} aria-current={active ? 'page' : undefined} className={`nav-item${active ? ' nav-item--active' : ''}`} style={{
               display: 'flex',
               alignItems: 'center',
               gap: 10,
@@ -75,9 +89,10 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
               position: 'relative',
             }}>
               <Icon size={16} />
-              {label}
+              <span className="ce-label-long">{label}</span>
+              <span className="ce-label-short">{NAV.find(n => n.href === href)?.short || label}</span>
               {badge && count > 0 && (
-                <span key={count} className="badge-pop" style={{
+                <span key={count} className="badge-pop ce-badge" style={{
                   marginLeft: 'auto',
                   background: 'var(--accent-warm)',
                   color: 'var(--white)',
@@ -97,10 +112,10 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
       </nav>
 
       {/* Usage — hidden for admins, who aren't metered (see fix below) */}
-      {!isAdmin && <UsageMeter compact />}
+      {!isAdmin && <div className="ce-side-extra"><UsageMeter compact /></div>}
 
       {isAdmin && (
-        <div style={{ padding: '0 12px 8px' }}>
+        <div className="ce-side-extra" style={{ padding: '0 12px 8px' }}>
           <Link href="/admin" className={`nav-item${pathname.startsWith('/admin') ? ' nav-item--active' : ''}`} style={{
             display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
             borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.12)',
@@ -116,7 +131,7 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
 
       {/* Signed in as */}
       {userEmail && (
-        <div style={{
+        <div className="ce-side-extra" style={{
           padding: '12px 24px 4px',
           fontSize: '0.72rem',
           color: 'rgba(255,255,255,0.3)',
@@ -130,7 +145,7 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
       )}
 
       {/* Sign out */}
-      <div style={{ padding: '12px 12px 16px', borderTop: userEmail ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="ce-side-extra" style={{ padding: '12px 12px 16px', borderTop: userEmail ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
         <button onClick={handleSignOut} className="signout-btn press" style={{
           width: '100%',
           display: 'flex',
@@ -146,6 +161,7 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
         </button>
       </div>
     </aside>
+    </>
   )
 }
 

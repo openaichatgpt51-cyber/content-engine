@@ -7,6 +7,16 @@ import { Spinner, FadeImage, Toast, Skeleton } from '../../../components/ui'
 import { useBrand } from '../../../components/BrandProvider'
 import { scopeBrand } from '../../../lib/brand-scope'
 
+// Value for <input type="datetime-local"> in the viewer's own timezone, the
+// same one the Calendar uses. (toISOString() gave UTC, so Lagos users saw
+// times an hour early, and editing the field moved the post back an hour.)
+function toLocalInput(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 const TABS = [
   { key: 'linkedin',  label: '🔵 LinkedIn',    field: 'linkedin_body_clean',  scheduledField: 'linkedin_scheduled_time',  charLimit: 1200, platform: 'LinkedIn'  },
   { key: 'instagram', label: '🟣 Instagram',   field: 'insta_caption_clean',  scheduledField: 'instagram_scheduled_time', charLimit: 2200, platform: 'Instagram' },
@@ -291,6 +301,13 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
   }, [post])
 
   const cfg         = availableTabs.find(t => t.key === tab) || availableTabs[0]
+  // Platforms whose copy is over the character limit. Approve stays blocked
+  // until they're shortened, so nothing goes out cut off or fails to post.
+  const overLimit = availableTabs.filter(t => (localPost[t.field] || '').length > t.charLimit)
+  const overLimitMsg = overLimit.length
+    ? `Shorten the ${overLimit.map(t => t.platform === 'Twitter' ? 'X' : t.platform).join(' and ')} copy to approve: ` +
+      overLimit.map(t => `${(localPost[t.field] || '').length}/${t.charLimit}`).join(', ')
+    : ''
   const currentText = localPost[cfg.field] || ''
   // The account this post will publish from: the one connected to the post's
   // own brand, else any connected account on that platform.
@@ -444,6 +461,7 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
 
   // ── APPROVE ──────────────────────────────────────────────────────────────
   async function handleApprove() {
+    if (overLimit.length) { showMsg('Too long to approve. Shorten it first.', 'error'); return }
     setSaving(true)
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -619,17 +637,25 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
   }
 
   // ── RESCHEDULE ────────────────────────────────────────────────────────────
+  // Saved when the field loses focus (not on every keystroke), so a
+  // half-typed date is never written. The value is in the viewer's local time.
   async function reschedule(field, value) {
-    const iso = new Date(value).toISOString()
+    if (!value || value === toLocalInput(localPost[field])) return
+    const when = new Date(value)
+    if (Number.isNaN(when.getTime())) return
+    const iso = when.toISOString()
     const { error } = await supabase
       .from('posts')
       .update({ [field]: iso })
       .eq('id', localPost.id)
-    if (!error) {
-      const updated = { ...localPost, [field]: iso }
-      setLocalPost(updated)
-      onUpdate({ [field]: iso })
+    if (error) {
+      showMsg('Couldn’t change the time. Nothing was saved.', 'error')
+      return
     }
+    const updated = { ...localPost, [field]: iso }
+    setLocalPost(updated)
+    onUpdate({ [field]: iso })
+    showMsg('Time changed to ' + when.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))
   }
 
   // ── IMAGE UPDATE ──────────────────────────────────────────────────────────
@@ -728,10 +754,10 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
         <Toast toast={toast} />
 
         {/* Card header */}
-        <div style={{
+        <div className="review-head" style={{
           padding: '16px 24px',
           borderBottom: '1px solid var(--fog-60)',
-          display: 'flex', alignItems: 'center',
+          display: 'flex', alignItems: 'center', flexWrap: 'wrap',
           justifyContent: 'space-between', gap: 16,
           background: 'var(--fog)',
         }}>
@@ -758,16 +784,24 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
             <button
               className="press"
               onClick={handleApprove}
-              disabled={saving}
-              style={{ ...btn, background: 'var(--done)', color: 'white', border: 'none' }}
+              disabled={saving || overLimit.length > 0}
+              title={overLimitMsg || undefined}
+              aria-describedby={overLimit.length ? `over-${localPost.id}` : undefined}
+              style={{ ...btn, background: overLimit.length ? 'var(--fog-60)' : 'var(--done)', color: overLimit.length ? 'var(--ink-40)' : 'white', border: 'none', cursor: overLimit.length ? 'not-allowed' : 'pointer' }}
             >
               {saving ? <Spinner light /> : '✓ Approve'}
             </button>
           </div>
         </div>
 
-        {/* Two-column body */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+        {overLimit.length > 0 && (
+          <div id={`over-${localPost.id}`} role="status" style={{ padding: '10px 24px', background: 'var(--failed-bg)', color: 'var(--failed)', borderBottom: '1px solid var(--failed-border)', fontSize: '0.8125rem', fontWeight: 500 }}>
+            {overLimitMsg}. Use “Edit” on that platform’s tab.
+          </div>
+        )}
+
+        {/* Two-column body (stacks to one column on phones, see .review-body in globals.css) */}
+        <div className="review-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
 
           {/* LEFT — image + editor */}
           <div style={{ padding: '20px 20px 20px 24px', borderRight: '1px solid var(--fog-60)' }}>
@@ -985,10 +1019,10 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
               <span style={{ fontSize: '0.75rem', color: 'var(--ink-20)', flexShrink: 0 }}>⏰</span>
               <input
                 type="datetime-local"
-                defaultValue={localPost[cfg.scheduledField]
-                  ? new Date(localPost[cfg.scheduledField]).toISOString().slice(0, 16)
-                  : ''}
-                onChange={e => reschedule(cfg.scheduledField, e.target.value)}
+                key={`${cfg.scheduledField}-${localPost[cfg.scheduledField] || ''}`}
+                aria-label={`Scheduled time for ${cfg.platform === 'Twitter' ? 'X' : cfg.platform}`}
+                defaultValue={toLocalInput(localPost[cfg.scheduledField])}
+                onBlur={e => reschedule(cfg.scheduledField, e.target.value)}
                 style={{
                   fontSize: '0.78rem', padding: '4px 8px',
                   border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)',
@@ -1027,12 +1061,12 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
                       Cancel
                     </button>
                     <button className="press" onClick={saveEdit} disabled={saving || charCount > cfg.charLimit} style={{ ...btn, background: charCount > cfg.charLimit ? 'var(--fog-60)' : 'var(--done)', color: charCount > cfg.charLimit ? 'var(--ink-20)' : 'white', border: 'none', fontSize: '0.78rem', padding: '5px 12px' }}>
-                      {saving ? <Spinner light /> : 'Save & Approve'}
+                      {saving ? <Spinner light /> : 'Save changes'}
                     </button>
                   </div>
                 </div>
-                <p style={{ fontSize: '0.72rem', color: 'var(--ink-20)', marginTop: 6 }}>
-                  Saving will approve this post for scheduling.
+                <p style={{ fontSize: '0.72rem', color: 'var(--ink-40)', marginTop: 6 }}>
+                  Saving keeps the post in this queue. Press Approve when it’s ready.
                 </p>
               </div>
             ) : (
