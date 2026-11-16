@@ -5,6 +5,7 @@ import { ROLE_LABEL } from '../../lib/admin/permissions'
 
 const ITEMS = [
   { href: '/admin',           label: 'Today',       countKey: 'today' },
+  { href: '/admin/inbox',     label: 'Inbox',       countKey: 'inbox' },
   { href: '/admin/clients',   label: 'Clients' },
   { href: '/admin/leads',     label: 'Leads',       countKey: 'leads' },
   { href: '/admin/posts',     label: 'Posts queue', countKey: 'posts' },
