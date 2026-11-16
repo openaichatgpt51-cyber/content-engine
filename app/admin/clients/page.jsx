@@ -1,109 +1,103 @@
-import { supabaseAdmin } from '../../../lib/supabase-admin'
+import Link from 'next/link'
+import { requireAdminPage } from '../../../lib/admin/auth'
+import { loadClientRows } from '../../../lib/admin/clients'
+import { can } from '../../../lib/admin/permissions'
+import { formatNaira, formatDate } from '../../../lib/admin/rules'
 
-export default async function AdminClientsPage() {
-  const [{ data: clients }, { data: subs }, { data: posts }, { data: brandRows }] = await Promise.all([
-    supabaseAdmin.from('clients').select('id, created_at, max_brands'),
-    supabaseAdmin.from('subscriptions').select('client_id, plan, status, posts_used, posts_limit'),
-    supabaseAdmin.from('posts').select('client_id, posting_status, created_at'),
-    supabaseAdmin.from('brands').select('client_id'),
-  ])
+const PAGE = 50
+const FILTERS = [['all', 'All'], ['active', 'Active'], ['paused', 'Paused'], ['disabled', 'Disabled'], ['overdue', 'Invoice overdue'], ['risk', 'At risk']]
 
-  const brandCount = {}
-  for (const b of brandRows || []) brandCount[b.client_id] = (brandCount[b.client_id] || 0) + 1
+export default async function AdminClients({ searchParams }) {
+  const admin = await requireAdminPage()
+  const money = can(admin.role, 'money.view')
+  const { rows, mrr } = await loadClientRows()
+  const q = String(searchParams?.q || '').trim().toLowerCase()
+  const filter = FILTERS.some(([k]) => k === searchParams?.status) ? searchParams.status : 'all'
+  const page = Math.max(1, parseInt(searchParams?.page || '1', 10) || 1)
 
-  const subByClient = Object.fromEntries((subs || []).map(s => [s.client_id, s]))
-  const postsByClient = {}
-  for (const p of posts || []) {
-    (postsByClient[p.client_id] ||= []).push(p)
+  const match = r => {
+    if (q && ![r.company_name, r.email, r.contact_name].some(v => (v || '').toLowerCase().includes(q))) return false
+    if (filter === 'active') return r.status.key === 'active'
+    if (filter === 'paused') return r.status.key === 'paused'
+    if (filter === 'disabled') return ['disabled', 'offboarded'].includes(r.status.key)
+    if (filter === 'overdue') return r.invoiceState === 'overdue'
+    if (filter === 'risk') return r.risk === 'high'
+    return true
+  }
+  const counts = Object.fromEntries(FILTERS.map(([k]) => [k, rows.filter(r => {
+    if (k === 'all') return true
+    if (k === 'disabled') return ['disabled', 'offboarded'].includes(r.status.key)
+    if (k === 'overdue') return r.invoiceState === 'overdue'
+    if (k === 'risk') return r.risk === 'high'
+    return r.status.key === k
+  }).length]))
+  const filtered = rows.filter(match)
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE))
+  const shown = filtered.slice((page - 1) * PAGE, page * PAGE)
+  const link = (over) => {
+    const all = { ...(q ? { q } : {}), ...(filter !== 'all' ? { status: filter } : {}), ...over }
+    const p = new URLSearchParams(Object.entries(all).filter(([, v]) => v))
+    const s = p.toString()
+    return `/admin/clients${s ? `?${s}` : ''}`
   }
 
-  const thirtyDaysAgo = Date.now() - 30 * 86_400_000
-  const fourteenDaysAgo = Date.now() - 14 * 86_400_000
-
-  const rows = (clients || []).map(c => {
-    const clientPosts = postsByClient[c.id] || []
-    const recentPosts = clientPosts.filter(p => new Date(p.created_at).getTime() > thirtyDaysAgo)
-    const lastPostAt = clientPosts.length ? Math.max(...clientPosts.map(p => new Date(p.created_at).getTime())) : null
-    const sub = subByClient[c.id]
-
-    let churnRisk = 'low'
-    if (!lastPostAt || lastPostAt < fourteenDaysAgo) churnRisk = 'high'
-    else if (recentPosts.length <= 1) churnRisk = 'medium'
-
-    return {
-      id: c.id,
-      plan: sub?.plan || 'trial',
-      status: sub?.status || 'trialing',
-      posts_used: sub?.posts_used ?? 0,
-      posts_limit: sub?.posts_limit ?? 5,
-      brands: brandCount[c.id] || 0,
-      maxBrands: c.max_brands ?? 1,
-      totalPosts: clientPosts.length,
-      postsLast30d: recentPosts.length,
-      lastPostAt,
-      churnRisk,
-    }
-  }).sort((a, b) => b.postsLast30d - a.postsLast30d)
-
-  const atRisk = rows.filter(r => r.churnRisk === 'high').length
-
   return (
-    <div style={{ maxWidth: 1000 }}>
-      <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)', marginBottom: 4 }}>Clients</h1>
-      <p style={{ color: 'var(--ink-20)', fontSize: '0.875rem', marginBottom: 24 }}>
-        Sorted by activity in the last 30 days — most active first.
-      </p>
+    <>
+      <header className="ad-head">
+        <div className="ad-stack" style={{ gap: 4 }}>
+          <h1 className="ad-h1">Clients</h1>
+          <p className="ad-sub">{rows.length} client{rows.length === 1 ? '' : 's'}{money ? ` · ${formatNaira(mrr)} monthly recurring revenue` : ''}</p>
+        </div>
+        {can(admin.role, 'clients.create') && <Link href="/admin/clients/new" className="ad-btn primary">+ New client</Link>}
+      </header>
 
-      <div style={{ display: 'flex', gap: 16, marginBottom: 28 }}>
-        <StatCard label="Total clients" value={rows.length} />
-        <StatCard label="Active (posted in 30d)" value={rows.filter(r => r.postsLast30d > 0).length} />
-        <StatCard label="At churn risk" value={atRisk} accent={atRisk > 0 ? 'var(--failed)' : undefined} />
+      <div className="ad-row" style={{ justifyContent: 'space-between' }}>
+        <nav aria-label="Client status" className="ad-pills">
+          {FILTERS.map(([k, label]) => (
+            <Link key={k} href={link({ status: k === 'all' ? '' : k, page: '' })} className="ad-pill" aria-current={filter === k ? 'page' : undefined}>{label} <span className="ad-muted">{counts[k]}</span></Link>
+          ))}
+        </nav>
+        <form role="search" action="/admin/clients" className="ad-row">
+          {filter !== 'all' && <input type="hidden" name="status" value={filter} />}
+          <label className="ad-sr" htmlFor="client-q">Search clients</label>
+          <input id="client-q" name="q" defaultValue={q} placeholder="Search name or email" className="ad-input" style={{ width: 260 }} />
+          <button className="ad-btn" type="submit">Search</button>
+        </form>
       </div>
 
-      <div style={{ background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
-          <thead>
-            <tr>
-              {['Client', 'Plan', 'Usage', 'Brands', 'Total posts', 'Last 30 days', 'Last post', 'Risk'].map(h => <th key={h} style={th}>{h}</th>)}
-            </tr>
-          </thead>
+      <div className="ad-card flush ad-table-box">
+        <table className="ad-table" style={{ minWidth: 960 }}>
+          <caption className="ad-sr">Clients, sorted by risk then name</caption>
+          <thead><tr>
+            <th scope="col">Client</th><th scope="col">Status</th><th scope="col">Plan</th><th scope="col">Invoice</th>
+            <th scope="col">Brands</th><th scope="col">Last post</th><th scope="col">Next 7 days</th><th scope="col">Risk</th>
+          </tr></thead>
           <tbody>
-            {rows.map(r => (
-              <tr key={r.id}>
-                <td style={td}><code style={{ fontSize: '0.72rem' }}>{r.id.slice(0, 8)}</code></td>
-                <td style={td}>{r.plan}</td>
-                <td style={td}>{r.posts_used}/{r.posts_limit}</td>
-                <td style={td}>{r.brands}/{r.maxBrands}</td>
-                <td style={td}>{r.totalPosts}</td>
-                <td style={td}>{r.postsLast30d}</td>
-                <td style={td}>{r.lastPostAt ? new Date(r.lastPostAt).toLocaleDateString() : 'Never'}</td>
-                <td style={td}><RiskBadge risk={r.churnRisk} /></td>
+            {shown.length === 0 && <tr><td colSpan={8}><div className="ad-empty"><strong>No clients match</strong><span className="ad-muted">Try another filter or search.</span></div></td></tr>}
+            {shown.map(r => (
+              <tr key={r.client_id}>
+                <td><Link href={`/admin/clients/${r.client_id}`} className="ad-strong" style={{ textDecoration: 'none' }}>{r.company_name || r.email}</Link><div className="ad-small ad-muted">{r.email}</div></td>
+                <td><span className={`ad-badge ${r.status.tone}`}>{r.status.label}</span></td>
+                <td className="nowrap">{r.contract ? r.contract.plan_name : <span className="ad-muted">No contract</span>}{money && r.contract && <div className="ad-small ad-muted">{formatNaira(r.contract.amount_ngn)} / {r.contract.cycle === 'annual' ? 'year' : 'month'}</div>}</td>
+                <td className="nowrap">{r.invoiceState === 'overdue' ? <span className="ad-text-bad">Overdue</span> : r.invoiceState === 'none' ? <span className="ad-muted">None yet</span> : money ? <span className={r.invoiceState === 'paid' ? 'ad-text-good' : ''}>{r.invoiceState === 'paid' ? 'Paid' : 'Sent'}</span> : <span className="ad-text-good">Up to date</span>}</td>
+                <td className="nowrap">{r.brands} of {r.max_brands}</td>
+                <td className="nowrap">{r.last_post_at ? formatDate(r.last_post_at) : <span className="ad-muted">Never</span>}</td>
+                <td className="nowrap">{r.scheduled_7d}{r.stale_approvals ? <div className="ad-small ad-text-warn">{r.stale_approvals} waiting approval</div> : null}</td>
+                <td><span className={`ad-badge ${r.risk === 'high' ? 'bad' : r.risk === 'medium' ? 'warn' : ''}`}>{r.risk[0].toUpperCase() + r.risk.slice(1)}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </div>
+      {pages > 1 && (
+        <nav aria-label="Pages" className="ad-row" style={{ justifyContent: 'space-between' }}>
+          <span className="ad-small ad-muted">Page {page} of {pages}</span>
+          <span className="ad-row">
+            {page > 1 && <Link className="ad-btn" href={link({ page: String(page - 1) })}>Previous</Link>}
+            {page < pages && <Link className="ad-btn" href={link({ page: String(page + 1) })}>Next</Link>}
+          </span>
+        </nav>
+      )}
+    </>
   )
 }
-
-function StatCard({ label, value, accent }) {
-  return (
-    <div style={{ flex: 1, padding: '16px 18px', background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-lg)' }}>
-      <div style={{ fontSize: '1.5rem', fontWeight: 700, fontFamily: 'var(--font-display)', color: accent || 'var(--ink)' }}>{value}</div>
-      <div style={{ fontSize: '0.78rem', color: 'var(--ink-40)', marginTop: 2 }}>{label}</div>
-    </div>
-  )
-}
-function RiskBadge({ risk }) {
-  const styles = {
-    low:    { color: '#16A34A', label: 'Low' },
-    medium: { color: '#B45309', label: 'Medium' },
-    high:   { color: 'var(--failed)', label: 'High' },
-  }
-  const s = styles[risk]
-  return <span style={{ color: s.color, fontWeight: 500 }}>{s.label}</span>
-}
-
-const th = { textAlign: 'left', padding: '10px 14px', fontSize: '0.72rem', color: 'var(--ink-20)', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '1px solid var(--fog-60)' }
-const td = { padding: '10px 14px', borderBottom: '1px solid var(--fog)', color: 'var(--ink)' }

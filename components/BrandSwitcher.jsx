@@ -12,7 +12,12 @@ export default function BrandSwitcher() {
   const [busy, setBusy]       = useState(false)
   const [error, setError]     = useState('')
 
+  // A client with one brand and no extra allowance has nothing to switch to or
+  // add, so the switcher (and the default brand's name) stays hidden. It shows
+  // once there are 2+ brands, or when the client has been granted room for more
+  // so they can add one.
   if (!enabled || brands.length === 0) return null
+  if (brands.length < 2 && maxBrands < 2) return null
 
   const active   = brands.find(b => b.id === activeBrandId) || brands[0]
   const atLimit  = brands.length >= maxBrands
