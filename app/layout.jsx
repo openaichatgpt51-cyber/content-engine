@@ -1,4 +1,5 @@
 import './globals.css'
+import GoogleTagManager from '../components/GoogleTagManager'
 
 export const metadata = {
   title: 'ContentEngine — AI Social Media Dashboard',
@@ -8,7 +9,10 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <GoogleTagManager />
+        {children}
+      </body>
     </html>
   )
 }
