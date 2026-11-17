@@ -62,6 +62,14 @@ export async function middleware(req) {
     supabase.from('admin_users').select('role').eq('user_id', session.user.id).maybeSingle(),
   ])
   const isAdmin = !!adminRow?.role
+  // Readable marker so analytics (components/GoogleTagManager.jsx) never loads
+  // for staff, on any page. Not a security control: access is still decided
+  // by admin_users on every request.
+  if (isAdmin && req.cookies.get('ce_staff')?.value !== '1') {
+    res.cookies.set('ce_staff', '1', { maxAge: 60 * 60 * 24 * 30, path: '/', sameSite: 'lax' })
+  } else if (!isAdmin && req.cookies.get('ce_staff')) {
+    res.cookies.delete('ce_staff')
+  }
   if (!isAdmin && me?.lifecycle && me.lifecycle !== 'active') {
     await supabase.auth.signOut()
     if (pathname.startsWith('/api/')) {
