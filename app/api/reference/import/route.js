@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { rateLimit } from '../../../../lib/rate-limit'
 import { createSupabaseServerClient } from '../../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../../lib/supabase-admin'
 import { resolveActiveBrandId } from '../../../../lib/brand'
@@ -25,6 +26,8 @@ export async function POST(request) {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ error: 'Your session has expired — please sign in again.' }, { status: 401 })
+    const limited = await rateLimit(session.user.id, 'ref-import', 30)
+    if (limited) return limited
     const userId = session.user.id
 
     const { platform } = await request.json().catch(() => ({}))
