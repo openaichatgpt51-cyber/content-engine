@@ -84,6 +84,9 @@ function SettingsFlow() {
   const [analyzing, setAnalyzing] = useState(false)
   const [imageError, setImageError] = useState('')
   const [scheduleSaving, setScheduleSaving] = useState(false)
+  const [colorBusy,       setColorBusy]       = useState(false)
+  const [colorError,      setColorError]      = useState('')
+  const [colorSuggestion, setColorSuggestion] = useState(null)
   const [planSwitching,  setPlanSwitching]  = useState(null) // plan key currently being switched to, or null
   const [scheduleSaved,  setScheduleSaved]  = useState(false)
   const [deleteError,       setDeleteError]       = useState('')
@@ -194,6 +197,20 @@ function SettingsFlow() {
         days: s[platform].days.includes(day) ? s[platform].days.filter(d => d !== day) : [...s[platform].days, day],
       },
     }))
+  }
+
+  async function suggestFromLogo() {
+    setColorBusy(true); setColorError(''); setColorSuggestion(null)
+    try {
+      const res = await fetch('/api/brand/logo-colors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ logoUrl: brandKit.logo_url }) })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Could not read the logo.')
+      setColorSuggestion(j.suggestion)
+    } catch (e) {
+      setColorError(e.message || 'Could not read the logo.')
+    } finally {
+      setColorBusy(false)
+    }
   }
 
   async function switchPlan(planKey) {
@@ -837,6 +854,39 @@ function SettingsFlow() {
               onChange={v => setBrandKit(k => ({ ...k, logo_url: v?.url || '' }))}
               label="Logo (PNG with transparent background works best)"
             />
+            {brandKit.logo_url && (
+              <div style={{ marginTop: 12 }}>
+                <button type="button" onClick={suggestFromLogo} disabled={colorBusy} className="press"
+                  style={{ padding: '7px 14px', fontSize: '0.78rem', fontWeight: 500, background: 'var(--fog)', color: 'var(--ink-40)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', cursor: colorBusy ? 'default' : 'pointer' }}>
+                  {colorBusy ? 'Reading your logo…' : '🎨 Suggest colours from my logo'}
+                </button>
+                {colorError && <p style={{ fontSize: '0.78rem', color: 'var(--failed)', marginTop: 8 }}>{colorError}</p>}
+                {colorSuggestion && (
+                  <div style={{ marginTop: 10, padding: 12, border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', background: 'var(--white)' }}>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                      {[['primary', 'Primary'], ['secondary', 'Secondary'], ['accent', 'Accent'], ['text', 'Text']].map(([k, l]) => (
+                        <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: 'var(--ink-40)' }}>
+                          <span style={{ width: 22, height: 22, borderRadius: 5, border: '1px solid var(--fog-60)', background: colorSuggestion[k] }} />
+                          {l} {colorSuggestion[k]}
+                        </div>
+                      ))}
+                    </div>
+                    {colorSuggestion.notes?.map(n => <p key={n} style={{ fontSize: '0.75rem', color: 'var(--ink-20)', marginBottom: 4 }}>{n}</p>)}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <button type="button" className="press" onClick={() => { const { primary, secondary, accent, text } = colorSuggestion; setBrandKit(k => ({ ...k, primary, secondary, accent, text })); setColorSuggestion(null) }}
+                        style={{ padding: '6px 14px', fontSize: '0.78rem', fontWeight: 500, background: 'var(--ink)', color: 'var(--white)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}>
+                        Use these colours
+                      </button>
+                      <button type="button" className="press" onClick={() => setColorSuggestion(null)}
+                        style={{ padding: '6px 14px', fontSize: '0.78rem', background: 'var(--white)', color: 'var(--ink-40)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}>
+                        Dismiss
+                      </button>
+                    </div>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--ink-20)', marginTop: 8 }}>Suggestions only. Nothing changes until you click Use these colours, and you can still adjust each colour above and save.</p>
+                  </div>
+                )}
+              </div>
+            )}
           </BrandSection>
 
           {/* Save button */}
