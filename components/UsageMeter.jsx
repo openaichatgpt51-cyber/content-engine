@@ -5,9 +5,9 @@ import { useUsage } from '../lib/useUsage'
 import { Spinner, Skeleton } from './ui'
 import { USAGE_LIMITS_ENABLED } from '../lib/featureFlags'
 
-// Hidden (and no usage request made) while usage limits are switched off.
+// Shown when usage limits are on for everyone, or when an admin has switched
+// metering on for this client (the usage API then returns metered: true).
 export default function UsageMeter(props) {
-  if (!USAGE_LIMITS_ENABLED) return null
   return <UsageMeterInner {...props} />
 }
 
@@ -15,8 +15,10 @@ function UsageMeterInner({ compact = false }) {
   const { usage, loading } = useUsage()
   const [portalLoading, setPortalLoading] = useState(false)
 
-  if (loading) return <Skeleton height={compact ? 40 : 92} radius="var(--radius-sm)" style={compact ? { margin: '8px 12px', width: 'auto' } : {}} />
+  if (loading) return USAGE_LIMITS_ENABLED ? <Skeleton height={compact ? 40 : 92} radius="var(--radius-sm)" style={compact ? { margin: '8px 12px', width: 'auto' } : {}} /> : null
   if (!usage) return null
+  if (!USAGE_LIMITS_ENABLED && !usage.metered) return null
+  const metered = !!usage.metered
 
   async function openPortal() {
     setPortalLoading(true)
@@ -94,7 +96,7 @@ function UsageMeterInner({ compact = false }) {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
             <span style={{ color: isCritical ? 'var(--failed)' : isWarning ? 'var(--approval)' : 'var(--ink-20)' }}>
-              {isCritical ? '⚠️ Almost at limit — upgrade to continue' : isWarning ? '⚠️ Running low on posts' : `${usage.posts_remaining} posts remaining`}
+              {isCritical ? (metered ? '⚠️ Almost at your monthly limit' : '⚠️ Almost at limit — upgrade to continue') : isWarning ? '⚠️ Running low on posts' : `${usage.posts_remaining} posts remaining`}
             </span>
             <span style={{ color: 'var(--ink-20)' }}>{Math.round(pct)}%</span>
           </div>
@@ -116,12 +118,12 @@ function UsageMeterInner({ compact = false }) {
         </div>
       )}
 
-      <div style={{ marginTop: 14 }}>
+      {!metered && <div style={{ marginTop: 14 }}>
         <button onClick={openPortal} disabled={portalLoading} className="press hover-lift" style={{ fontSize: '0.8125rem', color: 'var(--ink-40)', background: 'var(--fog)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', padding: '7px 14px', cursor: portalLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-body)' }}>
           {portalLoading && <Spinner size={12} />}
           Manage billing & plan →
         </button>
-      </div>
+      </div>}
     </div>
   )
 }
