@@ -13,12 +13,12 @@ export async function GET(request) {
   const params = new URLSearchParams({
     client_id:     process.env.INSTAGRAM_APP_ID,
     redirect_uri:  `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/instagram/callback`,
-    scope:         'instagram_basic,instagram_content_publish,pages_read_engagement',
+    scope:         'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement',
     response_type: 'code',
     state,
   })
 
-  const response = NextResponse.redirect(`https://www.facebook.com/v19.0/dialog/oauth?${params}`)
+  const response = NextResponse.redirect(`https://www.facebook.com/v21.0/dialog/oauth?${params}`)
   setStateCookie(response, 'instagram', nonce)
   return response
 }

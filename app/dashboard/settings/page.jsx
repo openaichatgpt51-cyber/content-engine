@@ -52,6 +52,17 @@ function SettingsFlow() {
   const { activeBrandId, writeBrandId, brands = [] } = useBrand()
   const validTabs = ['platforms', 'brandvoice', 'posting', 'schedule', 'billing', 'privacy']
   const requestedTab = searchParams.get('tab')
+  const connectedParam = searchParams.get('connected')
+  const errorParam      = searchParams.get('error')
+  const CONNECT_ERRORS = {
+    instagram_no_account: 'We could not find an Instagram Business or Creator account linked to a Facebook Page you manage. Switch your Instagram account to Business or Creator, link it to your Facebook Page, then try again.',
+    instagram_denied:     'Instagram connection was cancelled or permission was not granted.',
+    instagram_failed:     'Instagram could not be connected. Please try again, or contact support if it keeps happening.',
+    linkedin_denied:      'LinkedIn connection was cancelled or permission was not granted.',
+    linkedin_failed:      'LinkedIn could not be connected. Please try again, or contact support if it keeps happening.',
+    twitter_denied:       'X connection was cancelled or permission was not granted.',
+    twitter_failed:       'X could not be connected. Please try again, or contact support if it keeps happening.',
+  }
   const [connections, setConnections] = useState({})
   const [brand, setBrand]             = useState({
     company_description: '',
@@ -424,6 +435,17 @@ function SettingsFlow() {
           Manage platform connections and configure your brand voice
         </p>
       </div>
+
+      {(connectedParam || errorParam) && (
+        <div role="status" style={{
+          marginBottom: 20, padding: '12px 16px', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', lineHeight: 1.5,
+          background: errorParam ? '#fbebeb' : '#e5f4e4', color: 'var(--ink)', border: '1px solid var(--fog-60)',
+        }}>
+          {errorParam
+            ? (CONNECT_ERRORS[errorParam] || 'That connection did not complete. Please try again.')
+            : `${connectedParam === 'twitter' ? 'X' : connectedParam.charAt(0).toUpperCase() + connectedParam.slice(1)} connected.`}
+        </div>
+      )}
 
       {/* Tab nav */}
       <div className="settings-tabs" style={{ display: 'flex', gap: 0, marginBottom: 28, borderBottom: '1px solid var(--fog-60)' }}>

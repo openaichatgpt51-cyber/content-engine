@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { readState, stateFailure, clearStateCookie } from '../../../../../lib/oauth-state'
 import { resolveActiveBrandId } from '../../../../../lib/brand'
 import { fetchPlatformProfile, saveProfile } from '../../../../../lib/platform-profile'
+import { findInstagramAccount } from '../../../../../lib/instagram-account'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -18,7 +19,7 @@ export async function GET(request) {
 
   try {
     // Exchange code for short-lived token
-    const tokenRes = await fetch('https://graph.facebook.com/v19.0/oauth/access_token', {
+    const tokenRes = await fetch('https://graph.facebook.com/v21.0/oauth/access_token', {
       method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body:    new URLSearchParams({
@@ -35,17 +36,18 @@ export async function GET(request) {
 
     // Exchange for long-lived token (60 days)
     const longRes = await fetch(
-      `https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${process.env.INSTAGRAM_APP_ID}&client_secret=${process.env.INSTAGRAM_APP_SECRET}&fb_exchange_token=${tokenData.access_token}`
+      `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${process.env.INSTAGRAM_APP_ID}&client_secret=${process.env.INSTAGRAM_APP_SECRET}&fb_exchange_token=${tokenData.access_token}`
     )
     const longData = await longRes.json()
     const finalToken = longData.access_token || tokenData.access_token
 
-    // Get Instagram Business Account ID
-    const meRes = await fetch(
-      `https://graph.facebook.com/v19.0/me?fields=id,name,instagram_business_account&access_token=${finalToken}`
-    )
-    const meData = await meRes.json()
-    const igAccountId = meData.instagram_business_account?.id || meData.id
+    // Find the Instagram Business account linked to one of the user's Facebook Pages
+    const found = await findInstagramAccount(finalToken)
+    if (!found) {
+      return NextResponse.redirect(new URL(`${redirect}?error=instagram_no_account`, request.url))
+    }
+    const igAccountId = found.igAccountId
+    if (found.linkedCount > 1) console.warn(`Instagram connect: ${found.linkedCount} Pages have an Instagram account; using ${found.pageName}`)
 
     // Store in Supabase
     const supabase = await createSupabaseServerClient()
