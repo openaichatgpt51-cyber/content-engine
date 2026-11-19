@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { requireAdminPage } from '../../../lib/admin/auth'
 import { can } from '../../../lib/admin/permissions'
-import { loadAnalytics } from '../../../lib/admin/analytics'
+import { loadAnalytics, loadGenerationCounts } from '../../../lib/admin/analytics'
+import LiveRefresh from '../../../components/admin/LiveRefresh'
 import { formatNaira } from '../../../lib/admin/rules'
 
 const pct = v => (v == null ? '—' : Math.round(v * 100) + '%')
@@ -28,7 +29,10 @@ export default async function AdminAnalytics({ searchParams }) {
   const tabs = [...(business ? [['business', 'Business']] : []), ['usage', 'Usage'], ['reliability', 'Reliability'], ['content', 'Content']]
   const tab = tabs.some(([k]) => k === searchParams?.tab) ? searchParams.tab : tabs[0][0]
   const days = [7, 30, 90].includes(Number(searchParams?.range)) ? Number(searchParams.range) : 30
-  const data = await loadAnalytics({ days, includeBusiness: business && tab === 'business' })
+  const [data, gen] = await Promise.all([
+    loadAnalytics({ days, includeBusiness: business && tab === 'business' }),
+    loadGenerationCounts(),
+  ])
   const q = (over) => `/admin/analytics?${new URLSearchParams({ tab, range: String(days), ...over })}`
 
   return (
@@ -37,11 +41,19 @@ export default async function AdminAnalytics({ searchParams }) {
         <div className="ops-stack" style={{ gap: 4 }}>
           <h1 className="ops-h1">Analytics</h1>
           <p className="ops-sub">Last {days} days · all clients · from live data</p>
+          <LiveRefresh />
         </div>
         <nav aria-label="Date range" className="ops-pills">
           {[7, 30, 90].map(d => <Link key={d} href={q({ range: String(d) })} className="ops-pill" aria-current={days === d ? 'page' : undefined}>{d} days</Link>)}
         </nav>
       </header>
+      <section className="ops-stats" aria-label="Posts generated, live">
+        <div className="ops-card ops-stat"><span className="ops-stat-label">Posts generated today</span><span className="ops-stat-value">{gen.postsToday}</span><span className="ops-small ops-muted">{gen.reqToday} requested{gen.reqToday > gen.postsToday ? ` · ${gen.reqToday - gen.postsToday} still generating or failed` : ''}{gen.failedToday ? ` · ${gen.failedToday} refused by n8n` : ''}</span></div>
+        <div className="ops-card ops-stat"><span className="ops-stat-label">Last 7 days</span><span className="ops-stat-value">{gen.posts7d}</span></div>
+        <div className="ops-card ops-stat"><span className="ops-stat-label">This month</span><span className="ops-stat-value">{gen.postsMonth}</span><span className="ops-small ops-muted">{gen.reqMonth} requested{gen.blockedMonth ? ` · ${gen.blockedMonth} blocked by monthly limits` : ''}</span></div>
+        <div className="ops-card ops-stat"><span className="ops-stat-label">All time</span><span className="ops-stat-value">{gen.postsTotal}</span></div>
+      </section>
+
       <nav aria-label="Analytics sections" className="ops-tabs">
         {tabs.map(([k, label]) => <Link key={k} href={q({ tab: k })} className="ops-tab" aria-current={tab === k ? 'page' : undefined}>{label}</Link>)}
       </nav>
