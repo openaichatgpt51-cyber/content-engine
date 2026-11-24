@@ -112,6 +112,7 @@
 .ops-table td { font-size: 14px; padding: 13px 16px; border-bottom: 1px solid var(--ops-line-2); vertical-align: middle; }
 .ops-table tr:last-child td { border-bottom: none; }
 .ops-table .nowrap { white-space: nowrap; }
+.ops-table-tight th, .ops-table-tight td { padding-left: 12px; padding-right: 12px; }
 .ops-strong { font-weight: 600; }
 
 /* Lists of problems */

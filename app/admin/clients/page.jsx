@@ -69,17 +69,17 @@ export default async function AdminClients({ searchParams }) {
       </div>
 
       <div className="ops-card flush ops-table-box">
-        <table className="ops-table" style={{ minWidth: 1100 }}>
+        <table className="ops-table ops-table-tight" style={{ minWidth: 880 }}>
           <caption className="ops-sr">Clients, sorted by risk then name</caption>
           <thead><tr>
-            <th scope="col">Client</th><th scope="col">Status</th><th scope="col">Plan</th><th scope="col">Invoice</th>
-            <th scope="col">Brands</th><th scope="col">Posts generated</th><th scope="col">Monthly usage</th><th scope="col">Next 7 days</th><th scope="col">Risk</th>
+            <th scope="col">Client</th><th scope="col">Status</th><th scope="col">Plan · Invoice</th>
+            <th scope="col">Posts generated</th><th scope="col">Monthly usage</th><th scope="col">Next 7 days</th><th scope="col">Risk</th>
           </tr></thead>
           <tbody>
-            {shown.length === 0 && <tr><td colSpan={9}><div className="ops-empty"><strong>No clients match</strong><span className="ops-muted">Try another filter or search.</span></div></td></tr>}
+            {shown.length === 0 && <tr><td colSpan={7}><div className="ops-empty"><strong>No clients match</strong><span className="ops-muted">Try another filter or search.</span></div></td></tr>}
             {shown.map(r => (
               <tr key={r.client_id}>
-                <td><Link href={`/admin/clients/${r.client_id}`} className="ops-strong" style={{ textDecoration: 'none' }}>{r.company_name || r.email}</Link><div className="ops-small ops-muted">{r.email}</div></td>
+                <td><Link href={`/admin/clients/${r.client_id}`} className="ops-strong" style={{ textDecoration: 'none' }}>{r.company_name || r.email}</Link><div className="ops-small ops-muted">{r.email}</div><div className="ops-small ops-muted">{r.brands} of {r.max_brands} brand{r.max_brands === 1 ? '' : 's'}</div></td>
                 <td><div className="ops-stack" style={{ gap: 8, alignItems: 'flex-start' }}><span className={`ops-badge ${r.status.tone}`}>{r.status.label}</span>
                 {can(admin.role, 'clients.status') && (r.lifecycle === 'suspended' ? (
                   <ActionDialog endpoint={`/api/admin/clients/${r.client_id}/status`} body={{ action: 'enable' }} label="Enable" size="sm"
@@ -89,11 +89,9 @@ export default async function AdminClients({ searchParams }) {
                     title={`Disable ${r.company_name || r.email}?`} confirmText={r.company_name || r.email}
                     points={['All users are signed out and can’t sign in.', 'Posting is paused; scheduled posts are held, not deleted.', 'Nothing is deleted. You can enable the account again.']} successMessage="Account disabled." />
                 ) : null)}</div></td>
-                <td className="nowrap">{r.contract ? r.contract.plan_name : <span className="ops-muted">No contract</span>}{money && r.contract && <div className="ops-small ops-muted">{formatNaira(r.contract.amount_ngn)} / {r.contract.cycle === 'annual' ? 'year' : 'month'}</div>}</td>
-                <td className="nowrap">{r.invoiceState === 'overdue' ? <span className="ops-text-bad">Overdue</span> : r.invoiceState === 'none' ? <span className="ops-muted">None yet</span> : money ? <span className={r.invoiceState === 'paid' ? 'ops-text-good' : ''}>{r.invoiceState === 'paid' ? 'Paid' : 'Sent'}</span> : <span className="ops-text-good">Up to date</span>}</td>
-                <td className="nowrap">{r.brands} of {r.max_brands}</td>
+                <td className="nowrap">{r.contract ? r.contract.plan_name : <span className="ops-muted">No contract</span>}{money && r.contract && <div className="ops-small ops-muted">{formatNaira(r.contract.amount_ngn)} / {r.contract.cycle === 'annual' ? 'year' : 'month'}</div>}<div className="ops-small"><span className="ops-muted">Invoice: </span>{r.invoiceState === 'overdue' ? <span className="ops-text-bad">Overdue</span> : r.invoiceState === 'none' ? <span className="ops-muted">None yet</span> : money ? <span className={r.invoiceState === 'paid' ? 'ops-text-good' : ''}>{r.invoiceState === 'paid' ? 'Paid' : 'Sent'}</span> : <span className="ops-text-good">Up to date</span>}</div></td>
                 <td className="nowrap">
-                  <span className="ops-strong">{r.posts_today || 0}</span> today · {r.posts_month || 0} this month
+                  <span className="ops-strong">{r.posts_today || 0}</span> today · {r.posts_month || 0} this month · {r.posts_total || 0} total
                   <div className="ops-small ops-muted">{(r.generations_today || 0) > (r.posts_today || 0) ? `${r.generations_today - r.posts_today} still generating or failed · ` : ''}{r.last_post_at ? `last ${formatDate(r.last_post_at)}` : 'no posts yet'}</div>
                 </td>
                 <td className="nowrap">{r.usage_metering && r.monthly_post_limit ? (
