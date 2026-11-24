@@ -3,16 +3,14 @@ import { rateLimit } from '../../../lib/rate-limit'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
-import { loadLocaleContext } from '../../../lib/locale-context'
+import { waitUntil } from '@vercel/functions'
+import { buildItems } from '../../../lib/campaign-jobs-rules'
+import { kickAdvance } from '../../../lib/campaign-jobs-server'
 import { resolveActiveBrandId } from '../../../lib/brand'
 import { getMeter, checkMeter, logGenerations } from '../../../lib/usage'
 
-// Each post takes ~2 min in n8n and posts run one after another, so this
-// needs the longest duration the Vercel plan allows (300s on Pro; Hobby caps lower).
-export const maxDuration = 300
-
-const N8N_WEBHOOK_URL    = process.env.N8N_WEBHOOK_URL
-const N8N_WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET
+// Only validates and queues now; generation runs in /api/campaign-jobs/[id]/advance.
+export const maxDuration = 60
 
 export async function POST(request) {
   try {
@@ -47,13 +45,6 @@ export async function POST(request) {
       }, { status: 400 })
     }
 
-    const brandVoiceParts = [`Company: ${profile.company_description}`, `Audience: ${profile.target_audience}`]
-    if (profile.topics_to_avoid) brandVoiceParts.push(`Avoid discussing: ${profile.topics_to_avoid}`)
-    if (profile.example_posts?.filter(Boolean).length) {
-      brandVoiceParts.push(`Match the style of these examples:\n${profile.example_posts.filter(Boolean).join('\n---\n')}`)
-    }
-    const brandVoice = brandVoiceParts.join('\n\n')
-
     // ── Batch usage limit check ─────────────────────────────────────────
     const { data: subRow } = await supabaseAdmin
       .from('subscriptions')
@@ -84,51 +75,21 @@ export async function POST(request) {
       }
     }
 
-    // ── Sequential generation ────────────────────────────────────────────
-    // Still sequential, still required — option B's collision-aware
-    // scheduling only works if each post's slot is committed before the
-    // next one checks for collisions. Unchanged from the original design.
-    const locale  = await loadLocaleContext(userId, brandId)
-    const results = []
-    for (const g of cleanGroups) {
-      try {
-        const headers = { 'Content-Type': 'application/json' }
-        if (N8N_WEBHOOK_SECRET) headers['x-webhook-secret'] = N8N_WEBHOOK_SECRET
-
-        const n8nRes = await fetch(N8N_WEBHOOK_URL, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            topic:        g.topic.trim(),
-            platforms:    g.platforms.join(','),
-            tone:         g.tone || 'Professional',
-            brand_voice:  brandVoice,
-            is_carousel:  !!g.isCarousel,
-            slide_count:  g.isCarousel ? Math.max(2, Math.min(10, Number(g.slideCount) || 5)) : null,
-            is_campaign:  true,
-            ...locale,
-            client_id:    userId,
-            brand_id:     brandId,
-            client_email: session.user.email,
-          }),
-        })
-
-        if (n8nRes.ok) {
-          // Usage is counted by n8n (Record Usage node) once the post is saved.
-          results.push({ topic: g.topic, platforms: g.platforms, status: 'generated' })
-        } else {
-          const text = await n8nRes.text().catch(() => '')
-          results.push({ topic: g.topic, platforms: g.platforms, status: 'failed', error: `${n8nRes.status} ${text}` })
-        }
-      } catch (err) {
-        results.push({ topic: g.topic, platforms: g.platforms, status: 'failed', error: err.message })
-      }
+    // ── Queue the campaign and return straight away ─────────────────────
+    // Posts are still made one after another (collision-aware scheduling needs
+    // each slot committed before the next), but in the background: see
+    // /api/campaign-jobs/[id]/advance. The page shows live progress.
+    const { data: job, error: jobErr } = await supabaseAdmin.from('campaign_jobs')
+      .insert({ client_id: userId, brand_id: brandId, client_email: session.user.email, total: cleanGroups.length })
+      .select('id').single()
+    if (jobErr) throw new Error('Could not start the campaign')
+    const { error: itemsErr } = await supabaseAdmin.from('campaign_job_items').insert(buildItems(cleanGroups, job.id))
+    if (itemsErr) {
+      await supabaseAdmin.from('campaign_jobs').delete().eq('id', job.id)
+      throw new Error('Could not start the campaign')
     }
-
-    await logGenerations(results.map(r => ({ client_id: userId, brand_id: brandId, source: 'campaign', platforms: r.platforms, status: r.status === 'generated' ? 'accepted' : 'failed', error: r.error })))
-
-    const succeeded = results.filter(r => r.status === 'generated').length
-    return NextResponse.json({ success: true, generated: succeeded, failed: results.length - succeeded, results })
+    waitUntil(kickAdvance(new URL(request.url).origin, job.id))
+    return NextResponse.json({ success: true, jobId: job.id, total: cleanGroups.length })
 
   } catch (err) {
     console.error('Campaign generation error:', err)

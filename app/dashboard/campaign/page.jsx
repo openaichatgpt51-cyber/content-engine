@@ -5,6 +5,7 @@ import { Spinner } from '../../../components/ui'
 import { supabase } from '../../../lib/supabase'
 import { useBrand } from '../../../components/BrandProvider'
 import { scopeBrand } from '../../../lib/brand-scope'
+import { needsResume } from '../../../lib/campaign-jobs-rules'
 
 const TONES = [
   { value: 'professional', label: 'Professional' },
@@ -33,8 +34,45 @@ export default function CampaignPage() {
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
   const [errorCode, setErrorCode] = useState(null)
-  const [result,   setResult]   = useState(null)
+  const [jobId,    setJobId]    = useState(null)
+  const [progress, setProgress] = useState(null)   // { job, items, summary, etaMinutes }
   const [suggesting, setSuggesting] = useState({})   // { LinkedIn: true } while loading
+
+  // Pick up a campaign that is still running (refresh, other device).
+  useEffect(() => {
+    fetch('/api/campaign-jobs').then(r => r.ok ? r.json() : null).then(d => { if (d?.jobId) setJobId(d.jobId) }).catch(() => {})
+  }, [])
+
+  // Poll progress; if nothing is moving but work remains, ask the server to continue.
+  useEffect(() => {
+    if (!jobId) return
+    let stop = false
+    async function tick() {
+      try {
+        const r = await fetch(`/api/campaign-jobs/${jobId}`)
+        if (!r.ok || stop) return
+        const d = await r.json()
+        if (stop) return
+        setProgress(d)
+        if (d.job.status === 'running' && needsResume(d.items)) {
+          await fetch(`/api/campaign-jobs/${jobId}/advance`, { method: 'POST' })
+        }
+      } catch { /* try again on the next tick */ }
+    }
+    tick()
+    const t = setInterval(tick, 4000)
+    return () => { stop = true; clearInterval(t) }
+  }, [jobId])
+
+  async function retryItem(itemId) {
+    await fetch(`/api/campaign-jobs/${jobId}/retry`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId }),
+    })
+    const r = await fetch(`/api/campaign-jobs/${jobId}`)
+    if (r.ok) setProgress(await r.json())
+  }
+
+  function startAnother() { setJobId(null); setProgress(null) }
 
   async function suggestTopics(platformKey) {
     setSuggesting(s => ({ ...s, [platformKey]: true }))
@@ -146,7 +184,7 @@ export default function CampaignPage() {
     setLoading(true)
     setError('')
     setErrorCode(null)
-    setResult(null)
+    setProgress(null)
 
     try {
       const res = await fetch('/api/generate-campaign', {
@@ -165,7 +203,7 @@ export default function CampaignPage() {
         if (body.code === 'LIMIT_REACHED') setErrorCode('LIMIT_REACHED')
         throw new Error(body.error || `Request failed (${res.status})`)
       }
-      setResult(body)
+      setJobId(body.jobId)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -196,26 +234,52 @@ export default function CampaignPage() {
     )
   }
 
-  if (result) {
+  if (jobId) {
+    const items = progress?.items || []
+    const sm = progress?.summary
+    const finished = sm ? !sm.active : false
+    const pct = sm && sm.total ? Math.round((sm.finished / sm.total) * 100) : 0
+    const label = { queued: 'Waiting', running: 'Writing…', done: 'Ready', failed: 'Failed' }
+    const color = { queued: 'var(--ink-20)', running: 'var(--ink)', done: 'var(--published, #2e7d32)', failed: 'var(--failed)' }
     return (
-      <div style={{ padding: '32px 40px', maxWidth: 560 }}>
-        <div style={{ background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-lg)', padding: 32, textAlign: 'center' }}>
-          <div style={{ fontSize: '2rem', marginBottom: 12 }}>{result.failed === 0 ? '✅' : '⚠️'}</div>
-          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', marginBottom: 8 }}>
-            {result.generated} post{result.generated === 1 ? '' : 's'} generated
+      <div style={{ padding: '32px 40px', maxWidth: 640 }}>
+        <div style={{ background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-lg)', padding: 28 }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', marginBottom: 6 }}>
+            {!sm ? 'Starting your campaign…' : finished
+              ? `${sm.done} of ${sm.total} post${sm.total === 1 ? '' : 's'} ready`
+              : `Generating ${sm.finished + 1 > sm.total ? sm.total : sm.finished + 1} of ${sm.total}`}
           </h2>
-          {result.failed > 0 && (
-            <p style={{ color: 'var(--failed)', fontSize: '0.875rem', marginBottom: 12 }}>
-              {result.failed} failed — check Notifications for details.
-            </p>
-          )}
-          <p style={{ color: 'var(--ink-40)', fontSize: '0.875rem', marginBottom: 20 }}>
-            Scheduled to your next available slots, waiting in the Review Queue.
+          <p style={{ color: 'var(--ink-40)', fontSize: '0.8125rem', lineHeight: 1.6, marginBottom: 14 }}>
+            {finished
+              ? (sm.failed ? `${sm.failed} failed. Retry them below.` : 'Scheduled to your next available slots, waiting in the Review Queue.')
+              : `About ${progress?.etaMinutes || '…'} min left. You can leave this page. Posts appear in the Review Queue as they finish.`}
           </p>
-          <Link href="/dashboard/review" style={{
-            display: 'inline-block', padding: '10px 20px', background: 'var(--ink)', color: 'var(--white)',
-            borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 500, textDecoration: 'none',
-          }}>Go to Review Queue →</Link>
+          <div style={{ height: 6, background: 'var(--fog)', borderRadius: 3, overflow: 'hidden', marginBottom: 18 }}>
+            <div style={{ width: `${pct}%`, height: '100%', background: 'var(--ink)', transition: 'width .4s' }} />
+          </div>
+          <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {items.map(i => (
+              <li key={i.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderTop: '1px solid var(--fog-60)', fontSize: '0.8125rem' }}>
+                <span style={{ minWidth: 22, fontWeight: 600 }}>{i.position}.</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: 'var(--ink)' }}>{i.topic}</div>
+                  <div style={{ color: 'var(--ink-20)', fontSize: '0.75rem', marginTop: 2 }}>{(i.platforms || []).join(' · ')}</div>
+                  {i.status === 'failed' && i.error && <div style={{ color: 'var(--failed)', marginTop: 4 }}>{i.error}</div>}
+                </div>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: color[i.status], fontWeight: 500 }}>
+                  {i.status === 'running' && <Spinner size={12} />}
+                  {label[i.status]}
+                </span>
+                {i.status === 'failed' && (
+                  <button type="button" onClick={() => retryItem(i.id)} style={{ padding: '4px 10px', fontSize: '0.75rem', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', background: 'var(--white)', cursor: 'pointer' }}>Retry</button>
+                )}
+              </li>
+            ))}
+          </ol>
+          <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
+            <Link href="/dashboard/review" style={{ display: 'inline-block', padding: '10px 20px', background: 'var(--ink)', color: 'var(--white)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 500, textDecoration: 'none' }}>Go to Review Queue →</Link>
+            {finished && <button type="button" onClick={startAnother} style={{ padding: '10px 20px', background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', cursor: 'pointer' }}>Start another campaign</button>}
+          </div>
         </div>
       </div>
     )
