@@ -90,6 +90,12 @@ export default function CampaignPage() {
     return effective(key).topicsText.split('\n').map(t => t.trim()).filter(Boolean)
   }
 
+  function removeTopic(key, index) {
+    const lines = platformState[key].topicsText.split('\n').map(t => t.trim()).filter(Boolean)
+    lines.splice(index, 1)
+    updatePlatform(key, 'topicsText', lines.join('\n'))
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     const activePlatforms = PLATFORMS.filter(p => enabled[p.key]).map(p => p.key)
@@ -272,6 +278,17 @@ export default function CampaignPage() {
                     rows={4}
                     style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontFamily: 'var(--font-body)', resize: 'vertical', outline: 'none', marginBottom: 12 }}
                   />
+                  {topicsFor(p.key).length > 0 && (
+                    <ol aria-label={`${p.label} topics, in the order they will be created`} style={{ listStyle: 'none', margin: '0 0 12px', padding: 0 }}>
+                      {topicsFor(p.key).map((topic, i) => (
+                        <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0', borderTop: i ? '1px solid var(--fog-60)' : 'none', fontSize: '0.8125rem', color: 'var(--ink-40)' }}>
+                          <span style={{ minWidth: 22, fontWeight: 600, color: 'var(--ink)' }}>{i + 1}.</span>
+                          <span style={{ flex: 1 }}>{topic}</span>
+                          <button type="button" onClick={() => removeTopic(p.key, i)} aria-label={`Remove topic ${i + 1}`} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-20)', fontSize: '0.9rem', lineHeight: 1 }}>×</button>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
                   <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                     {TONES.map(t => (
                       <button key={t.value} type="button" onClick={() => updatePlatform(p.key, 'tone', t.value)} style={{
