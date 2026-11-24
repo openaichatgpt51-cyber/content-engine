@@ -2,7 +2,6 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
-import UsageMeter from './UsageMeter'
 import BrandSwitcher from './BrandSwitcher'
 
 const NAV = [
@@ -112,7 +111,7 @@ export default function Sidebar({ userEmail = '', pendingCount = 0, notification
       </nav>
 
       {/* Usage — hidden for admins, who aren't metered (see fix below) */}
-      {!isAdmin && <div className="ce-side-extra"><UsageMeter compact /></div>}
+      {/* Usage meter hidden while accounts are invoiced */}
 
       {isAdmin && (
         <div className="ce-side-extra" style={{ padding: '0 12px 8px' }}>

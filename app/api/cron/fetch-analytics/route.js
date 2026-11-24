@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
+import { isCronAuthorized } from '../../../../lib/cron-auth'
 import { supabaseAdmin } from '../../../../lib/supabase-admin'
 
 // Triggered by Vercel Cron, daily. Fetches engagement data for posts that
 // went DONE roughly 24h+ ago (giving LinkedIn's algorithm time to actually
 // distribute the post before measuring it) and don't have analytics yet.
 export async function GET(request) {
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 

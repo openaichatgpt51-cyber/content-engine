@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { rateLimit } from '../../../lib/rate-limit'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { resolveActiveBrandId } from '../../../lib/brand'
@@ -19,6 +20,8 @@ export async function POST(request) {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const limited = await rateLimit(session.user.id, 'topics', 40)
+    if (limited) return limited
 
     const { platform, count } = await request.json()
     if (!platform || !PLATFORM_GUIDANCE[platform]) {

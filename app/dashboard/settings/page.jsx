@@ -7,7 +7,6 @@ import { scopeBrand } from '../../../lib/brand-scope'
 import ReferenceMaterial from '../../../components/ReferenceMaterial'
 import { Spinner, Skeleton } from '../../../components/ui'
 import KillSwitch from '../../../components/KillSwitch'
-import UsageMeter from '../../../components/UsageMeter'
 import { PLANS } from '../../../lib/plans'
 import { DEFAULT_KIT, KIT_FONTS, KIT_LAYOUTS, sanitizeKit, contrastRatio } from '../../../lib/brand-kit'
 import ImageUploadField from '../../../components/ImageUploadField'
@@ -1045,6 +1044,16 @@ function SettingsFlow() {
             borderRadius: 'var(--radius)', padding: '22px 24px',
           }}>
             <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 8 }}>Your plan</h3>
+            <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', padding: '14px 16px', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius)', marginBottom: 14 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--ink-40)', marginBottom: 4 }}>Founder&apos;s Plan</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>₦800,000<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--ink-20)' }}> / month</span></div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--ink-40)', marginBottom: 4 }}>Billed annually</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>₦8,400,000<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--ink-20)' }}> / year</span></div>
+              </div>
+            </div>
             <p style={{ fontSize: '0.875rem', color: 'var(--ink-60)', lineHeight: 1.6, marginBottom: 12 }}>
               Your ContentEngine plan is billed by invoice. You’ll receive each invoice directly from us.
             </p>

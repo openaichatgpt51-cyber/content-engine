@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { rateLimit } from '../../../lib/rate-limit'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 
 // Called from the Review Queue's "Change image" panel. Requires an
@@ -9,6 +10,8 @@ export async function POST(request) {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const limited = await rateLimit(session.user.id, 'regen-image', 30)
+    if (limited) return limited
 
     const { query } = await request.json()
     if (!query?.trim()) {
@@ -26,7 +29,7 @@ export async function POST(request) {
 
     if (!process.env.PIXABAY_API_KEY) {
       console.error('PIXABAY_API_KEY is not set — check Vercel env vars')
-      return NextResponse.json({ error: 'Image search is not configured (missing API key)' }, { status: 500 })
+      return NextResponse.json({ error: 'This feature is temporarily unavailable. Please try again later or contact support.' }, { status: 503 })
     }
 
     const res     = await fetch(`https://pixabay.com/api/?${params}`)

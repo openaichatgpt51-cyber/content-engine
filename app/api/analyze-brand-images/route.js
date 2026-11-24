@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { rateLimit } from '../../../lib/rate-limit'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 
 // Always return JSON, even on failure — the settings page calls res.json()
@@ -16,13 +17,16 @@ export async function POST(request) {
     const supabase = await createSupabaseServerClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ error: 'Your session has expired — please sign in again.' }, { status: 401 })
+    const limited = await rateLimit(session.user.id, 'analyze-images', 20)
+    if (limited) return limited
 
     const { imageUrls } = await request.json().catch(() => ({}))
     const urls = (Array.isArray(imageUrls) ? imageUrls : []).filter(u => typeof u === 'string' && /^https:\/\//.test(u)).slice(0, 5)
     if (!urls.length) return NextResponse.json({ error: 'Upload at least one image first.' }, { status: 400 })
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: 'Image analysis is not configured (missing OPENAI_API_KEY).' }, { status: 500 })
+      console.error('CONFIG: OPENAI_API_KEY is not set (analyze-brand-images)')
+      return NextResponse.json({ error: 'This feature is temporarily unavailable. Please try again later or contact support.' }, { status: 503 })
     }
 
     const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
