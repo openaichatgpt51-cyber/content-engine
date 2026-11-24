@@ -5,6 +5,7 @@ import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
 import { loadLocaleContext } from '../../../lib/locale-context'
 import { resolveActiveBrandId } from '../../../lib/brand'
+import { getMeter, checkMeter, logGenerations } from '../../../lib/usage'
 
 // Each post takes ~2 min in n8n and posts run one after another, so this
 // needs the longest duration the Vercel plan allows (300s on Pro; Hobby caps lower).
@@ -73,6 +74,16 @@ export async function POST(request) {
       }, { status: 429 })
     }
 
+    // Per-client monthly cap (switched on per client in the admin panel).
+    const { data: campAdmin } = await supabaseAdmin.from('admin_users').select('role').eq('user_id', userId).maybeSingle()
+    if (!campAdmin?.role) {
+      const over = checkMeter(await getMeter(userId), cleanGroups.length)
+      if (over) {
+        await logGenerations(cleanGroups.map(g => ({ client_id: userId, brand_id: brandId, source: 'campaign', platforms: g.platforms, status: 'blocked', error: 'monthly limit' })))
+        return NextResponse.json(over, { status: 429 })
+      }
+    }
+
     // ── Sequential generation ────────────────────────────────────────────
     // Still sequential, still required — option B's collision-aware
     // scheduling only works if each post's slot is committed before the
@@ -113,6 +124,8 @@ export async function POST(request) {
         results.push({ topic: g.topic, platforms: g.platforms, status: 'failed', error: err.message })
       }
     }
+
+    await logGenerations(results.map(r => ({ client_id: userId, brand_id: brandId, source: 'campaign', platforms: r.platforms, status: r.status === 'generated' ? 'accepted' : 'failed', error: r.error })))
 
     const succeeded = results.filter(r => r.status === 'generated').length
     return NextResponse.json({ success: true, generated: succeeded, failed: results.length - succeeded, results })

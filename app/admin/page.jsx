@@ -3,6 +3,7 @@ import { requireAdminPage } from '../../lib/admin/auth'
 import { loadTodayItems } from '../../lib/admin/data'
 import { formatNaira, formatWhen } from '../../lib/admin/rules'
 import { supabaseAdmin } from '../../lib/supabase-admin'
+import LiveRefresh from '../../components/admin/LiveRefresh'
 
 const FILTERS = [
   ['all', 'All'], ['leads', 'Leads'], ['failed', 'Failed'], ['stuck', 'Stuck'],
@@ -26,6 +27,7 @@ export default async function AdminToday({ searchParams }) {
         <div className="ops-stack" style={{ gap: 4 }}>
           <p className="ops-eyebrow">{formatWhen(now.toISOString())}</p>
           <h1 className="ops-h1">{items.length === 0 ? 'Nothing needs you right now' : `${items.length} thing${items.length > 1 ? 's' : ''} need${items.length > 1 ? '' : 's'} you`}</h1>
+          <LiveRefresh seconds={30} />
         </div>
         {admin.role === 'owner' && <Link href="/admin/clients/new" className="ops-btn primary">+ New client</Link>}
       </header>
