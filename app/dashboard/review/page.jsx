@@ -304,9 +304,15 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
   // Platforms whose copy is over the character limit. Approve stays blocked
   // until they're shortened, so nothing goes out cut off or fails to post.
   const overLimit = availableTabs.filter(t => (localPost[t.field] || '').length > t.charLimit)
+  // What is on screen right now: the open draft for the tab being edited, the
+  // saved text for the rest. The banner follows this so it clears as soon as
+  // the draft is back within the limit; Approve still waits for a save.
+  const liveText = t => (editing && t.key === cfg.key) ? draftText : (localPost[t.field] || '')
+  const liveOver = availableTabs.filter(t => liveText(t).length > t.charLimit)
+  const draftFixesIt = overLimit.length > 0 && liveOver.length === 0
   const overLimitMsg = overLimit.length
     ? `Shorten the ${overLimit.map(t => t.platform === 'Twitter' ? 'X' : t.platform).join(' and ')} copy to approve: ` +
-      overLimit.map(t => `${(localPost[t.field] || '').length}/${t.charLimit}`).join(', ')
+      overLimit.map(t => `${liveText(t).length}/${t.charLimit}`).join(', ')
     : ''
   const currentText = localPost[cfg.field] || ''
   // The account this post will publish from: the one connected to the post's
@@ -831,8 +837,15 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
         </div>
 
         {overLimit.length > 0 && (
-          <div id={`over-${localPost.id}`} role="status" style={{ padding: '10px 24px', background: 'var(--failed-bg)', color: 'var(--failed)', borderBottom: '1px solid var(--failed-border)', fontSize: '0.8125rem', fontWeight: 500 }}>
-            {overLimitMsg}. Use “Edit” on that platform’s tab.
+          <div id={`over-${localPost.id}`} role="status" style={{
+            padding: '10px 24px', fontSize: '0.8125rem', fontWeight: 500,
+            background: draftFixesIt ? 'var(--approval-bg)' : 'var(--failed-bg)',
+            color: draftFixesIt ? 'var(--approval)' : 'var(--failed)',
+            borderBottom: `1px solid ${draftFixesIt ? 'var(--approval-border)' : 'var(--failed-border)'}`,
+          }}>
+            {draftFixesIt
+              ? 'Within the limit now. Click “Save changes”, then approve.'
+              : <>{overLimitMsg}. Use “Edit” on that platform’s tab.</>}
           </div>
         )}
 
@@ -1087,7 +1100,7 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
                   <span style={{
                     fontSize: '0.72rem', fontVariantNumeric: 'tabular-nums',
-                    color: charCount > cfg.charLimit * 0.9 ? 'var(--failed)' : 'var(--ink-20)',
+                    color: charCount > cfg.charLimit ? 'var(--failed)' : charCount > cfg.charLimit * 0.9 ? 'var(--approval)' : 'var(--ink-20)',
                   }}>
                     {charCount} / {cfg.charLimit}
                     {charCount > cfg.charLimit && ' — over limit!'}
