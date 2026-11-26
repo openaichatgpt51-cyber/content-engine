@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
+import { getMeter } from '../../../lib/usage'
 
 // GET — return current usage for the logged-in user
 export async function GET() {
@@ -14,7 +15,23 @@ export async function GET() {
       .from('subscriptions')
       .select('plan, posts_used, posts_limit, status, current_period_end')
       .eq('client_id', session.user.id)
-      .single()
+      .maybeSingle()
+
+    // A client the admin has metered sees their real monthly count and cap,
+    // even while USAGE_LIMITS_ENABLED is off for everyone else.
+    const meter = await getMeter(session.user.id)
+    if (meter.metered) {
+      return NextResponse.json({
+        plan:               sub?.plan || 'plan',
+        status:             sub?.status || 'active',
+        posts_used:         meter.used,
+        posts_limit:        meter.limit,
+        posts_remaining:    meter.remaining,
+        current_period_end: meter.resetsAt,
+        can_generate:       sub?.status !== 'canceled' && meter.remaining > 0,
+        metered:            true,
+      })
+    }
 
     if (!sub) {
       // No subscription yet — return trial defaults

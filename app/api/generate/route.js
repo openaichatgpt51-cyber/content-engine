@@ -5,6 +5,7 @@ import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { USAGE_LIMITS_ENABLED } from '../../../lib/featureFlags'
 import { loadLocaleContext } from '../../../lib/locale-context'
 import { resolveActiveBrandId } from '../../../lib/brand'
+import { getMeter, checkMeter, logGenerations } from '../../../lib/usage'
 
 // How long to wait for n8n before treating the job as "accepted and running".
 // A full generation takes ~2-3 minutes, so n8n does not answer within this
@@ -121,6 +122,16 @@ export async function POST(request) {
       }
     }
 
+    // ── Per-client monthly cap (switched on per client in the admin panel) ─
+    if (!isAdmin) {
+      const meter = await getMeter(userId)
+      const over = checkMeter(meter, groups.length)
+      if (over) {
+        await logGenerations(groups.map(g => ({ client_id: userId, platforms: g.platforms, status: 'blocked', error: 'monthly limit' })))
+        return NextResponse.json(over, { status: 429 })
+      }
+    }
+
     // ── Fire one n8n call per group, in parallel ─────────────────────────
     // We do not wait for the generation to finish (it takes 2-3 minutes and
     // used to hit the old 120s limit, reporting "failed" for runs that then
@@ -131,7 +142,7 @@ export async function POST(request) {
     const locale    = await loadLocaleContext(userId, brandId)
     const n8nUrl    = process.env.N8N_WEBHOOK_URL
     const n8nSecret = process.env.N8N_WEBHOOK_SECRET
-    if (!n8nUrl) return NextResponse.json({ error: 'n8n webhook URL not configured' }, { status: 500 })
+    if (!n8nUrl) { console.error('CONFIG: n8n webhook URL is not set (generate)'); return NextResponse.json({ error: 'This feature is temporarily unavailable. Please try again later or contact support.' }, { status: 503 }) }
 
     const results = await Promise.all(groups.map(async (g) => {
       try {
@@ -168,6 +179,8 @@ export async function POST(request) {
         return { platforms: g.platforms, status: 'failed', error: err.message }
       }
     }))
+
+    await logGenerations(results.map(r => ({ client_id: userId, brand_id: brandId, source: 'generate', platforms: r.platforms, status: r.status === 'started' ? 'accepted' : 'failed', error: r.error })))
 
     const started = results.filter(r => r.status === 'started').length
     if (started === 0) {

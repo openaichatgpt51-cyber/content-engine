@@ -9,6 +9,8 @@ import {
   formatNaira, formatDate, formatWhen, riskFlags, FLAG_LABEL, earliestScheduled, invoiceIsOverdue, median, LIVE_PLATFORMS,
 } from '../../../../lib/admin/rules'
 import ActionDialog from '../../../../components/admin/ActionDialog'
+import LiveRefresh from '../../../../components/admin/LiveRefresh'
+import { lagosMonthBounds } from '../../../../lib/usageRules'
 import InviteLinkButton from '../../../../components/admin/InviteLinkButton'
 
 const LANG = { en: 'English', fr: 'French', pcm: 'Nigerian Pidgin', yo: 'Yoruba', ha: 'Hausa', ig: 'Igbo', pt: 'Portuguese', sw: 'Swahili', ar: 'Arabic' }
@@ -90,7 +92,7 @@ export default async function ClientDetail({ params, searchParams }) {
         ))}
       </nav>
 
-      {tab === 'overview' && <Overview id={id} summary={summary} onboarding={onboarding} contract={contract} money={money} brandName={brandName} />}
+      {tab === 'overview' && <Overview id={id} admin={admin} summary={summary} onboarding={onboarding} contract={contract} money={money} brandName={brandName} />}
       {tab === 'brands' && <Brands id={id} admin={admin} brands={brands || []} profileBy={profileBy} accounts={accounts || []} max={client.max_brands ?? 1} />}
       {tab === 'posts' && <Posts id={id} brandName={brandName} />}
       {tab === 'connections' && <Connections accounts={accounts || []} brandName={brandName} />}
@@ -100,7 +102,7 @@ export default async function ClientDetail({ params, searchParams }) {
   )
 }
 
-async function Overview({ id, summary, onboarding, contract, money, brandName }) {
+async function Overview({ id, admin, summary, onboarding, contract, money, brandName }) {
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString()
   const [{ data: posts }, { data: upcoming }] = await Promise.all([
     supabaseAdmin.from('posts').select('id, posting_status, created_at').eq('client_id', id).gte('created_at', since),
@@ -124,8 +126,48 @@ async function Overview({ id, summary, onboarding, contract, money, brandName })
   }
   const next = (upcoming || []).map(p => ({ p, at: earliestScheduled(p) })).filter(x => x.at && x.at > new Date()).sort((a, b) => a.at - b.at).slice(0, 5)
 
+  const sm = summary || {}
+  const metered = !!sm.usage_metering && !!sm.monthly_post_limit
+  const used = sm.generations_month || 0
+  const resets = lagosMonthBounds().end.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'Africa/Lagos' })
+  const canMeter = can(admin.role, 'clients.usage')
+  const limitField = { name: 'limit', label: 'Posts per month', type: 'number', required: true, defaultValue: sm.monthly_post_limit || 30, hint: 'Each platform group in one request counts as one post.' }
+
   return (
     <>
+      <section className="ops-card ops-stack" aria-label="Posts and usage">
+        <div className="ops-row" style={{ justifyContent: 'space-between' }}>
+          <h2 className="ops-h2">Posts generated</h2>
+          <LiveRefresh />
+        </div>
+        <div className="ops-stats">
+          <div className="ops-stat"><span className="ops-stat-label">Today</span><span className="ops-stat-value">{sm.posts_today ?? 0}</span>{(sm.generations_today || 0) > (sm.posts_today || 0) && <span className="ops-small ops-muted">{sm.generations_today - sm.posts_today} more requested, still generating or failed</span>}</div>
+          <div className="ops-stat"><span className="ops-stat-label">This month</span><span className="ops-stat-value">{sm.posts_month ?? 0}</span><span className="ops-small ops-muted">{used} requested</span></div>
+          <div className="ops-stat"><span className="ops-stat-label">All time</span><span className="ops-stat-value">{sm.posts_total ?? 0}</span></div>
+          <div className="ops-stat">
+            <span className="ops-stat-label">Monthly usage</span>
+            <span className={`ops-stat-value ${metered && used >= sm.monthly_post_limit ? 'ops-text-bad' : ''}`}>{metered ? `${used} / ${sm.monthly_post_limit}` : 'No cap'}</span>
+            <span className="ops-small ops-muted">{metered ? (used >= sm.monthly_post_limit ? `Limit reached. Generation blocked until ${resets}.` : `${sm.monthly_post_limit - used} left · resets ${resets}`) : 'Metering is off for this client'}</span>
+          </div>
+        </div>
+        {canMeter && (
+          <div className="ops-row">
+            {metered ? (
+              <>
+                <ActionDialog endpoint={`/api/admin/clients/${id}/usage`} body={{ metering: 'on' }} label="Change monthly limit" size="sm"
+                  title="Change the monthly limit" fields={[limitField]} points={[`Used so far this month: ${used}.`, 'Takes effect on the client’s next generation.']} successMessage="Limit updated." />
+                <ActionDialog endpoint={`/api/admin/clients/${id}/usage`} body={{ metering: 'off' }} label="Turn metering off" size="sm"
+                  title="Turn metering off?" points={['The client can generate without a monthly cap.', 'Their usage meter disappears from their sidebar.']} successMessage="Metering off." />
+              </>
+            ) : (
+              <ActionDialog endpoint={`/api/admin/clients/${id}/usage`} body={{ metering: 'on' }} label="Turn on usage metering" size="sm" variant="primary"
+                title="Turn on usage metering" fields={[limitField]}
+                points={[`Counts generations this calendar month (WAT). This month so far: ${used}.`, 'At the limit, new generations are blocked with a clear message until the 1st.', 'The client sees “N of M posts this month” in their sidebar.']} successMessage="Metering on." />
+            )}
+          </div>
+        )}
+      </section>
+
       <section aria-label="Last 30 days" className="ops-stats">
         <div className="ops-card ops-stat"><span className="ops-stat-label">Published (30 days)</span><span className="ops-stat-value">{published}</span></div>
         <div className="ops-card ops-stat"><span className="ops-stat-label">Approval rate</span><span className="ops-stat-value">{decided ? Math.round(((decided - rejected) / decided) * 100) + '%' : '—'}</span><span className="ops-small ops-muted">{rejected} rejected of {decided} decided</span></div>
