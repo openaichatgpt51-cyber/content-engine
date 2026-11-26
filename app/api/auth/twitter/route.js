@@ -22,7 +22,7 @@ export async function GET(request) {
     response_type:         'code',
     client_id:             process.env.TWITTER_CLIENT_ID,
     redirect_uri:          `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/twitter/callback`,
-    scope:                 'tweet.read tweet.write users.read offline.access',
+    scope:                 'tweet.read tweet.write users.read offline.access media.write',
     state,
     code_challenge:        codeChallenge,
     code_challenge_method: 'S256',
