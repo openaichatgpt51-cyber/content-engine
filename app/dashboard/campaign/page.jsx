@@ -278,6 +278,7 @@ export default function CampaignPage() {
           </ol>
           <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
             <Link href="/dashboard/review" style={{ display: 'inline-block', padding: '10px 20px', background: 'var(--ink)', color: 'var(--white)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 500, textDecoration: 'none' }}>Go to Review Queue →</Link>
+            <Link href="/dashboard/campaigns" style={{ display: 'inline-block', padding: '10px 20px', background: 'var(--white)', border: '1px solid var(--fog-60)', color: 'var(--ink)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', textDecoration: 'none' }}>See what has gone out</Link>
             {finished && <button type="button" onClick={startAnother} style={{ padding: '10px 20px', background: 'var(--white)', border: '1px solid var(--fog-60)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', cursor: 'pointer' }}>Start another campaign</button>}
           </div>
         </div>
@@ -287,7 +288,10 @@ export default function CampaignPage() {
 
   return (
     <div style={{ padding: '32px 40px', maxWidth: 720 }}>
-      <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: 4 }}>New Campaign</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: 4 }}>New Campaign</h1>
+        <Link href="/dashboard/campaigns" style={{ fontSize: '0.875rem', color: 'var(--ink)' }}>Your campaigns →</Link>
+      </div>
       <p style={{ color: 'var(--ink-20)', fontSize: '0.875rem', marginBottom: 28 }}>
         Each platform can have its own topic list — or just copy LinkedIn's.
       </p>
