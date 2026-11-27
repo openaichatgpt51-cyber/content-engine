@@ -956,8 +956,10 @@ function PostCard({ post, index = 0, accounts = [], postingPaused = false, highl
                   <FadeImage
                     src={localPost.image_1_url || localPost.image_1_view_url}
                     alt="Post image"
-                    height={180}
+                    aspectRatio="1/1"
                     radius="var(--radius)"
+                    style={{ maxWidth: 420 }}
+                    imgStyle={{ objectFit: 'contain' }}
                   />
                   <button
                     onClick={() => setImgPanelOpen(o => !o)}
@@ -1443,7 +1445,7 @@ function LinkedInPreview({ text, imageUrl, account, when }) {
         </div>
       </div>
       <p style={{ fontSize: '0.875rem', lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: 12 }}>{text || 'Your post text here...'}</p>
-      {imageUrl && <FadeImage src={imageUrl} alt="Preview" height={220} radius={6} retryable={false} />}
+      {imageUrl && <FadeImage src={imageUrl} alt="Preview" aspectRatio="1/1" radius={6} retryable={false} imgStyle={{ objectFit: 'contain' }} />}
     </div>
   )
 }
@@ -1486,7 +1488,7 @@ function XPreview({ text, imageUrl, account }) {
         </div>
       </div>
       <p style={{ fontSize: '0.875rem', lineHeight: 1.4, whiteSpace: 'pre-wrap', marginBottom: 10 }}>{text || 'What is happening?!'}</p>
-      {imageUrl && <FadeImage src={imageUrl} alt="Preview" height={220} radius={8} retryable={false} />}
+      {imageUrl && <FadeImage src={imageUrl} alt="Preview" aspectRatio="1/1" radius={8} retryable={false} imgStyle={{ objectFit: 'contain' }} />}
     </div>
   )
 }

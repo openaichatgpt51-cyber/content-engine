@@ -10,7 +10,7 @@ import { resolveActiveBrandId } from '../../../lib/brand'
 // (that would need a SerpAPI key/account that doesn't exist yet) — a
 // reasonable fast-follow, not a blocker for this to be useful today.
 const PLATFORM_GUIDANCE = {
-  LinkedIn:  'Professional insight, thought leadership, industry analysis, lessons learned. Topics should sound like something a credible executive would post.',
+  LinkedIn:  'Professional insight, thought leadership, industry analysis, lessons learned. Topics should sound like something a credible expert in the field would post, pitched at the brand's actual audience.',
   Instagram: 'More visual and human — behind-the-scenes, team/culture moments, product in use, relatable takes. Still on-brand, less formal than LinkedIn.',
   Twitter:   'Punchy, timely, opinionated takes. Short-form hooks, not long-form analysis — a single sharp idea per topic.',
 }
@@ -23,7 +23,8 @@ export async function POST(request) {
     const limited = await rateLimit(session.user.id, 'topics', 40)
     if (limited) return limited
 
-    const { platform, count } = await request.json()
+    const { platform, count, existing } = await request.json()
+    const themes = (typeof existing === 'string' ? existing : '').split('\n').map(t => t.trim()).filter(Boolean).slice(0, 10)
     if (!platform || !PLATFORM_GUIDANCE[platform]) {
       return NextResponse.json({ error: 'A valid platform is required' }, { status: 400 })
     }
@@ -51,6 +52,9 @@ ${profile.tone ? `Tone: ${profile.tone}` : ''}
 ${profile.topics_to_avoid ? `Avoid: ${profile.topics_to_avoid}` : ''}
 
 Platform guidance: ${PLATFORM_GUIDANCE[platform]}
+
+First decide from the audience whether this is B2C (consumers, patients, the public) or B2B. For B2C write topics in plain language aimed at those people, never at executives, and make each topic imply a concrete call to action for them (e.g. book a check-up, try a habit this week, visit the clinic).
+${themes.length ? `The user has already chosen these topics; stay on the same theme and do not drift to other subjects:\n- ${themes.join('\n- ')}\n` : 'Base the topics on subjects currently relevant and seasonal for this audience and field.'}
 
 Each topic should be a single specific, concrete idea — not vague ("share a business tip") but specific ("the pricing mistake we made in year one and what it cost us"). No two topics should overlap in angle.
 
