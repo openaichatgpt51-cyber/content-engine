@@ -81,7 +81,7 @@ export default function CampaignPage() {
       const res = await fetch('/api/suggest-topics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform: platformKey, count: 5 }),
+        body: JSON.stringify({ platform: platformKey, count: 5, existing: platformState[platformKey].topicsText }),
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Suggestion failed')

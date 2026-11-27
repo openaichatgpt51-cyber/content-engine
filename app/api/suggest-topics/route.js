@@ -3,6 +3,7 @@ import { rateLimit } from '../../../lib/rate-limit'
 import { createSupabaseServerClient } from '../../../lib/supabase-server'
 import { supabaseAdmin } from '../../../lib/supabase-admin'
 import { resolveActiveBrandId } from '../../../lib/brand'
+import { buildSuggestPrompt } from '../../../lib/n8n-wait'
 
 // Distinct platform norms matter here — the same brand shouldn't get
 // identical topic suggestions for LinkedIn and Twitter. This is deliberately
@@ -10,7 +11,7 @@ import { resolveActiveBrandId } from '../../../lib/brand'
 // (that would need a SerpAPI key/account that doesn't exist yet) — a
 // reasonable fast-follow, not a blocker for this to be useful today.
 const PLATFORM_GUIDANCE = {
-  LinkedIn:  'Professional insight, thought leadership, industry analysis, lessons learned. Topics should sound like something a credible executive would post.',
+  LinkedIn:  'Professional insight, thought leadership, industry analysis, lessons learned. Topics should sound like something a credible expert in the field would post, pitched at the brand's actual audience.',
   Instagram: 'More visual and human — behind-the-scenes, team/culture moments, product in use, relatable takes. Still on-brand, less formal than LinkedIn.',
   Twitter:   'Punchy, timely, opinionated takes. Short-form hooks, not long-form analysis — a single sharp idea per topic.',
 }
@@ -23,7 +24,7 @@ export async function POST(request) {
     const limited = await rateLimit(session.user.id, 'topics', 40)
     if (limited) return limited
 
-    const { platform, count } = await request.json()
+    const { platform, count, existing } = await request.json()
     if (!platform || !PLATFORM_GUIDANCE[platform]) {
       return NextResponse.json({ error: 'A valid platform is required' }, { status: 400 })
     }
@@ -43,18 +44,7 @@ export async function POST(request) {
       }, { status: 400 })
     }
 
-    const prompt = `You are a content strategist. Suggest ${n} distinct social media post topics for ${platform}.
-
-Company: ${profile.company_description}
-Target audience: ${profile.target_audience}
-${profile.tone ? `Tone: ${profile.tone}` : ''}
-${profile.topics_to_avoid ? `Avoid: ${profile.topics_to_avoid}` : ''}
-
-Platform guidance: ${PLATFORM_GUIDANCE[platform]}
-
-Each topic should be a single specific, concrete idea — not vague ("share a business tip") but specific ("the pricing mistake we made in year one and what it cost us"). No two topics should overlap in angle.
-
-Return ONLY a JSON array of ${n} strings, no markdown, no explanation: ["topic 1", "topic 2", ...]`
+    const prompt = buildSuggestPrompt({ n, platform, profile, guidance: PLATFORM_GUIDANCE[platform], existing })
 
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
